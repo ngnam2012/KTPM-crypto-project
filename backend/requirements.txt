@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+pydantic
+websockets
+celery
+redis
+SQLAlchemy
+psycopg2-binary
+ccxt
+pandas
+numpy
+feedparser
+textblob
+transformers
+torch

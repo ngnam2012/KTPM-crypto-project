@@ -1,0 +1,95 @@
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from uuid import uuid4
+
+from src.infrastructure.database.config import Base
+
+def generate_uuid():
+    return str(uuid4())
+
+class CandleModel(Base):
+    __tablename__ = "candles"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    symbol = Column(String, index=True, nullable=False)
+    timeframe = Column(String, index=True, nullable=False)
+    timestamp = Column(DateTime, index=True, nullable=False)
+    open = Column(Float, nullable=False)
+    high = Column(Float, nullable=False)
+    low = Column(Float, nullable=False)
+    close = Column(Float, nullable=False)
+    volume = Column(Float, nullable=False)
+
+
+class StrategyDefinitionModel(Base):
+    __tablename__ = "strategy_definitions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String, index=True, nullable=False)
+    type = Column(String, nullable=False) # e.g., "single", "composite"
+    params_json = Column(JSON, nullable=False)
+    version = Column(String, default="1.0.0")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    backtests = relationship("BacktestResultModel", back_populates="strategy_definition")
+
+
+class BacktestResultModel(Base):
+    __tablename__ = "backtest_results"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    strategy_definition_id = Column(String, ForeignKey("strategy_definitions.id"), nullable=False)
+    symbol = Column(String, index=True, nullable=False)
+    timeframe = Column(String, index=True, nullable=False)
+    metrics_json = Column(JSON, nullable=False)
+    overall_score = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    strategy_definition = relationship("StrategyDefinitionModel", back_populates="backtests")
+    trades = relationship("TradeRecordModel", back_populates="backtest_result", cascade="all, delete-orphan")
+    leaderboard_entry = relationship("LeaderboardEntryModel", back_populates="backtest_result", uselist=False, cascade="all, delete-orphan")
+
+
+class TradeRecordModel(Base):
+    __tablename__ = "trade_records"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    backtest_result_id = Column(String, ForeignKey("backtest_results.id"), nullable=False)
+    entry_time = Column(DateTime, nullable=False)
+    entry_price = Column(Float, nullable=False)
+    exit_time = Column(DateTime, nullable=False)
+    exit_price = Column(Float, nullable=False)
+    profit_pct = Column(Float, nullable=False)
+    trade_type = Column(String, nullable=False) # "LONG" or "SHORT"
+
+    # Relationships
+    backtest_result = relationship("BacktestResultModel", back_populates="trades")
+
+
+class NewsItemModel(Base):
+    __tablename__ = "news_items"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    source = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    published_at = Column(DateTime, index=True, nullable=False)
+    sentiment_score = Column(Float, nullable=True)
+    sentiment_label = Column(String, nullable=True) # e.g., "positive", "neutral", "negative"
+
+
+class LeaderboardEntryModel(Base):
+    __tablename__ = "leaderboard_entries"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    backtest_result_id = Column(String, ForeignKey("backtest_results.id"), unique=True, nullable=False)
+    rank = Column(Integer, nullable=True) # Rank might be dynamically calculated, or stored if materialized
+    score = Column(Float, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    backtest_result = relationship("BacktestResultModel", back_populates="leaderboard_entry")
