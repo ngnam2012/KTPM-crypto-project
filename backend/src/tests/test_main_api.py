@@ -48,4 +48,16 @@ def test_news_sources_endpoint():
             assert "sources" in data
     asyncio.run(_test())
 
-
+def test_ai_strategy_generation_endpoint():
+    async def _test():
+        from src.main import app
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/custom-strategies/generate-from-prompt",
+                json={"prompt": "Fast MA Crossover short 15 long 60 combined with RSI below 25, Stop Loss 2%, Take Profit 4%"}
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert "name" in data
+            assert len(data["strategies"]) >= 2
+    asyncio.run(_test())

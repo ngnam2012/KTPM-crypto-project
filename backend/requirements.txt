@@ -13,3 +13,4 @@ feedparser
 textblob
 transformers
 torch
+httpx

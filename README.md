@@ -1,153 +1,187 @@
-# Crypto Strategy Lab – Platform Phân Tích & Đánh Giá Chiến Lược Giao Dịch Crypto
+# Crypto Strategy Lab – Nền Tảng Phân Tích, Kết Hợp & Đánh Giá Chiến Lược Giao Dịch Crypto
 
-Crypto Strategy Lab là một nền tảng phân tích, kết hợp, backtesting và tự động tìm kiếm chiến lược giao dịch tiền mã hóa với kiến trúc phần mềm bất đồng bộ, mở rộng (Plugin Architecture), hỗ trợ đa tiến trình (Multi-worker compatible) và tích hợp tin tức NLP (Sentiment Analysis).
-
----
-
-## 📌 Các Tính Năng Chính (Key Features)
-
-1. **Real-time Market Data & Multi-Timeframe Chart**:
-   - Tích hợp Binance API bất đồng bộ (`ccxt.async_support.binance`) lấy dữ liệu nến (OHLCV).
-   - WebSocket multiplexer truyền dữ liệu thời gian thực cho tối đa 4 biểu đồ với các timeframe độc lập (1m, 5m, 15m, 1h, 4h, 1d).
-2. **Strategy Engine & Plugin Architecture**:
-   - Kiến trúc mở rộng dạng Plugin cho phép bổ sung chiến lược đơn lẻ (`MAStrategy`, `RSIStrategy`, `BollingerBandsStrategy`, `SupportResistanceStrategy`, `SMCStrategy`, `NewsSentimentStrategy`) qua `StrategyRegistry` mà không cần sửa core engine.
-3. **Composite Strategy**:
-   - Kết hợp các chiến lược đơn lẻ bằng quy tắc Logic (`AND`, `OR`) hoặc phương pháp trọng số (`WEIGHTED`).
-4. **Strategy Search Engine & Continuous Loop**:
-   - Tự động tìm kiếm tổ hợp chiến lược tối ưu bằng thuật toán **Random Search** hoặc **Genetic Search (Giải thuật Di truyền)**.
-   - Chạy vòng lặp ngầm liên tục (**Continuous Strategy Loop**) tìm kiếm chiến lược vượt trội với Stop Condition tùy biến (max iterations, time limit, no improvement threshold).
-5. **Backtesting & Leaderboard Engine**:
-   - Giả lập giao dịch trên dữ liệu lịch sử, tính toán chỉ số hiệu năng: Total Return, Win Rate, Max Drawdown (MDD), Profit Factor, Sharpe Ratio.
-   - Bảng xếp hạng **Leaderboard (Top-K)** cập nhật tự động qua Pub/Sub Event Bus.
-6. **News Crawler & Sentiment Analysis Pipeline**:
-   - Thu thập tin tức RSS (`NewsCollector`, `RSSNewsProvider`) và phân tích cảm xúc (Sentiment) bằng mô hình Machine Learning FinBERT/TextBlob trong background threadpool, sử dụng kết quả sentiment làm tín hiệu chiến lược giao dịch.
+> **Đồ án môn học**: Kiến trúc Phần mềm (Software Architecture) – HK3 25-26  
+> **Trường Đại học Khoa học Tự nhiên – ĐHQG-HCM (HCMUS)**  
+> **Trọng tâm**: Thiết kế Kiến trúc Phần mềm mở rộng (Plugin Architecture), xử lý thời gian thực bất đồng bộ (WebSocket Multiplexing), giải thuật di truyền tối ưu hóa (Genetic Algorithm), hạch toán rủi ro định lượng (Stop Loss / Take Profit / 5bps Slippage) và xử lý ngôn ngữ tự nhiên (NLP FinBERT & AI Strategy Studio).
 
 ---
 
-## 🏛️ Sơ Đồ Kiến Trúc Hệ Thống (Software Architecture)
+## 📌 Các Module Tính Năng Chính (System Capabilities)
+
+### 1. 📈 Giám Sát Thị Trường Realtime Đa Khung Thời Gian (Market Dashboard)
+- **4 Biểu đồ nến đồng thời**: Theo dõi đồng thời 4 khung thời gian độc lập (`5m`, `15m`, `1h`, `4h` hoặc `1m`, `30m`, `1d`).
+- **WebSocket Multiplexing**: Kết nối luồng Binance WSS một lần ở Backend và phân phối đa luồng tới các component Frontend mà không gây tải phụ cho sàn.
+- **Đổi Timeframe động**: Thay đổi khung thời gian của từng biểu đồ độc lập mà không cần reload toàn bộ trang web.
+
+### 2. 🧪 Phòng Thí Nghiệm Backtest Chuyên Sâu (Backtest Workbench - `/backtest`)
+- **Tách riêng thành Tab độc lập**: Tối ưu không gian làm việc rộng rãi, toàn màn hình.
+- **Cấu hình kiểm thử 6 thông số chuẩn xác**:
+  - Chọn Pair/Coin (`BTC/USDT`, `ETH/USDT`, `SOL/USDT`, `BNB/USDT`, `XRP/USDT`...).
+  - Chọn Timeframe (`1m`, `5m`, `15m`, `1h`, `4h`, `1d`).
+  - Chọn Vốn ban đầu (Mặc định `$100.00`).
+  - Phí giao dịch (`0.05%`) và Giả lập **Slippage 5bps** (`0.05%`).
+  - Khoảng thời gian kiểm thử (`From - To` Date Range) kèm phím chọn nhanh `7D`, `30D`, `90D`, `ALL`.
+  - Quản trị rủi ro: **Stop Loss (%)**, **Take Profit (%)**, **Trailing Stop (%)**.
+  - Chiến lược Đơn / Đa hợp nhất (`AND`, `OR`, `WEIGHTED` có thanh trượt trọng số).
+- **Bảng lịch sử lệnh chi tiết 12 cột**: `#`, `Pair/Coin`, `Hướng (LONG/SHORT)`, `Thời gian vào`, `Giá vào`, `Vốn USD`, `Stoploss`, `TakeProfit`, `Thời gian ra`, `Giá ra`, `Phí (Cost)`, `Slippage (5bps)`, `Net Profit ($ & %)`.
+- **Khung thống kê tổng hợp**: Winrate (Wins / Losses), Total Net Profit ($ & %), Max Drawdown (MDD), Profit Factor, Sharpe Ratio, Total Trades, Tổng Phí + Slippage.
+- **Trực quan hóa trên Chart**: Đánh dấu mũi tên **BUY (Xanh)** và **SELL (Đỏ)**, click vào dòng lệnh trong bảng để zoom và highlight nến tương ứng.
+
+### 3. 🤖 AI Strategy Studio & Natural Language Parser (`/strategy-studio`)
+- **Thiết kế 4 cột chuyên dụng chuẩn theo slide giảng viên**:
+  - **Cột 1: Input**: Nhập mô tả chiến lược bằng ngôn ngữ tự nhiên (prompt) hoặc dán link bài viết phân tích kỹ thuật / TradingView để crawl tự động.
+  - **Cột 2: Strategy Đã Phân Tích**: Bóc tách tự động điều kiện LONG, điều kiện SHORT, Quản trị rủi ro (Stop Loss 2%, Take Profit 4%), Khung thời gian và Cặp coin áp dụng.
+  - **Cột 3: Định Nghĩa Strategy (JSON)**: Hiển thị mã JSON chuẩn hóa có cấu trúc và nút **Sao chép** (Copy JSON).
+  - **Cột 4: Kiểm Tra & Validation + Lưu Thư Viện**: Checklist kiểm tra thiếu trường, kiểm tra logic, chỉ báo hỗ trợ, trạng thái hợp lệ, form lưu tên/version/tags và nút **"Chạy Backtest Ngay"**.
+
+### 4. 🧬 AI Search Engine & Continuous Strategy Loop (`/search`)
+- Tự động sinh và tối ưu hóa hàng ngàn tổ hợp tham số chiến lược.
+- Tích hợp 2 thuật toán: **Random Search** và **Genetic Algorithm (Giải thuật Di truyền - GA)** qua các thế hệ tiến hóa.
+- Quản lý vòng lặp ngầm: Bắt đầu, Tạm dừng (Pause), Tiếp tục (Resume) và Dừng khi đạt điều kiện dừng (Stop Condition).
+
+### 5. 🏆 Bảng Xếp Hạng Động Theo Sự Kiện (Leaderboard - `/leaderboard`)
+- Xếp hạng **Top-10 Chiến Lược Vượt Trội** dựa trên hàm mục tiêu tổng hợp (*Overall Score = 0.4 Return + 0.3 Winrate + 0.2 MDD + 0.1 Sharpe*).
+- **Kiến trúc hướng sự kiện (Event-Driven)**: Tự động cập nhật bảng xếp hạng tức thì qua Pub/Sub khi có ứng viên mới phá vỡ kỷ lục mà không cần refresh trình duyệt.
+
+### 6. 📰 Thu Thập Tin Tức Thông Minh & NLP Sentiment Analysis (`/news`)
+- **Smart Web Crawler**: Tự động nhận diện cấu trúc thẻ HTML bài viết và lưu schema vào SQLite (`crawler_tag_schemas`) để tái sử dụng.
+- **NLP Sentiment Engine**: Sử dụng mô hình Machine Learning **FinBERT** (`distilroberta-finetuned-financial-news-sentiment-analysis`) chấm điểm cảm xúc tin tức và kích hoạt chiến lược `NewsSentimentStrategy`.
+
+---
+
+## 🏛️ Sơ Đồ Kiến Trúc Hệ Thống (Software Architecture Diagram)
 
 ```mermaid
 graph TD
-    UI["Frontend Dashboard<br/>(React + TypeScript + Vite)"]
-    API["FastAPI Backend Core<br/>(Uvicorn Multi-Workers)"]
-    WS["WebSocket Manager<br/>(Market & System Events)"]
-    DB[("Database<br/>(SQLite / PostgreSQL)")]
-    Redis[("Redis Central Broker<br/>(Streams / PubSub / Cache)")]
-
-    UI <-->|REST API| API
-    UI <-->|WebSocket Stream| WS
-
-    API -->|Async ORM| DB
-    API <-->|State & Broadcast| Redis
-    WS <-->|Pub/Sub Channel| Redis
-
-    subgraph "Async Backend Core"
-        API --> Engine["Strategy Engine & Registry"]
-        API --> Evaluator["Backtest Evaluator"]
-        API --> Leaderboard["Leaderboard Service"]
-        API --> ML["ML Sentiment Service (ThreadPool)"]
-        API --> Search["Search Engine Manager"]
+    subgraph "Frontend Client (React 19 + TypeScript + Vite)"
+        Dashboard["Market Dashboard (4-Timeframe Live)"]
+        Backtest["Backtest Workbench (/backtest)"]
+        Studio["AI Strategy Studio (/strategy-studio)"]
+        Search["AI Search Engine (/search)"]
+        Leaderboard["Leaderboard Top-K (/leaderboard)"]
+        News["News Feed & Sentiment (/news)"]
     end
 
-    subgraph "Distributed Background Processing"
-        CeleryWorker["Celery Background Worker"]
-        Redis --> CeleryWorker
-        CeleryWorker --> Search
+    subgraph "FastAPI Backend & Interface Adapters"
+        REST["REST API Endpoints"]
+        WSMultiplexer["WebSocket Multiplexer Manager"]
+    end
+
+    subgraph "Application Core & Trading Engine"
+        Registry["Strategy Registry (Plugin Architecture)"]
+        Composite["Composite Strategy (AND/OR/WEIGHTED)"]
+        Simulator["Trade Simulator (SL/TP/Fee/5bps Slippage)"]
+        Evaluator["Financial Metrics Evaluator"]
+        SearchManager["Search Engine (Random & Genetic GA)"]
+        SmartCrawler["Smart HTML Crawler & Tag Learner"]
+        Sentiment["FinBERT ML Sentiment Service"]
+        NLPParser["AI Natural Language Strategy Parser"]
+    end
+
+    subgraph "Message Broker & Data Tier"
+        EventBus[("EventBus / Redis Message Broker")]
+        DB[("Database (SQLite / PostgreSQL)")]
     end
 
     subgraph "External Providers"
-        API -->|Async CCXT| Binance["Binance REST API"]
-        WS -->|Async Stream| BinanceWS["Binance WebSocket API"]
-        API -->|News Collector| RSS["RSS News Feeds"]
+        BinanceAPI["Binance REST API"]
+        BinanceWS["Binance WebSocket Feed"]
+        NewsSources["Crypto News & RSS Sources"]
     end
+
+    Frontend Client <-->|HTTP REST| REST
+    Frontend Client <-->|WebSocket Stream| WSMultiplexer
+
+    REST --> Application Core & Trading Engine
+    WSMultiplexer --> BinanceWS
+
+    Application Core & Trading Engine --> EventBus
+    EventBus --> Leaderboard
+    EventBus --> WSMultiplexer
+
+    Application Core & Trading Engine --> DB
+    Application Core & Trading Engine --> BinanceAPI
+    Application Core & Trading Engine --> NewsSources
 ```
 
 ---
 
-## ⚡ Giải Quyết Các Vấn Đề Kiến Trúc (Architectural Drivers & Quality Attributes)
+## ⚡ Các Vấn Đề Kiến Trúc & Giải Pháp Cốt Lõi (Architectural Drivers)
 
-| Vấn đề Kiến trúc | Giải pháp Thực thi |
+| Vấn đề Kiến trúc | Giải pháp Thực thi Cụ thể |
 | :--- | :--- |
-| **Modifiability (Khả năng mở rộng)** | **Plugin Architecture & StrategyRegistry**: Đăng ký chiến lược mới mà không cần chỉnh sửa các component Controller, Backtester hay Leaderboard. |
-| **Scalability & Multiprocessing** | **Offloading to Celery & Redis**: Offload công việc tính toán di truyền kéo dài sang Celery Worker. Loại bỏ biến RAM toàn cục (`global`) giúp chạy an toàn trên `--workers N`. |
-| **Non-blocking Event Loop** | **Async CCXT & ThreadPool Execution**: Chuyển BinanceAdapter sang `ccxt.async_support.binance`. Đẩy tính toán Pandas và PyTorch ML sang ThreadPool qua `asyncio.to_thread`. |
-| **Reliability & Event Decoupling** | **Redis EventBus**: Sử dụng Pub/Sub và Consumer Groups báo nhận (Ack/Nack) để phân phối sự kiện giữa các micro-services / workers. |
-| **Maintainability** | Strategy Search được thiết kế độc lập với Backtesting Implementation qua `StrategyCandidate` abstraction. |
+| **Modifiability (Mở rộng)** | **Plugin Architecture & Registry**: Bổ sung chiến lược mới chỉ cần kế thừa `BaseStrategy` và đăng ký vào `StrategyRegistry`. Hoàn toàn không sửa Controller, Backtester hay Leaderboard. |
+| **Decoupling (Lỏng khớp)** | **Event-Driven Architecture (EventBus)**: `BacktestEvaluator` publish sự kiện `BACKTEST_COMPLETED`, `LeaderboardService` tự lắng nghe và cập nhật mà không gọi trực tiếp hàm của nhau. |
+| **Realtime Low-latency** | **WebSocket Multiplexing**: Một kết nối Binance duy nhất tại Backend phục vụ đồng thời nhiều Client và nhiều biểu đồ, tránh chạm giới hạn Rate Limit của sàn. |
+| **Scalability (Chịu tải)** | **Celery Worker Pool & Redis Streams**: Tách các tác vụ tìm kiếm hàng ngàn thế hệ di truyền ra các tiến trình chạy ngầm phân tán. |
+| **Reproducibility (Tái lập)** | **Strategy Versioning & Schema Persistence**: Mọi kết quả trên Leaderboard liên kết chặt chẽ với bản ghi `strategy_definitions` lưu đầy đủ JSON cấu hình, phiên bản và tham số. |
+| **Fault Tolerance (Khả năng chịu lỗi)** | **Isolated Fault Domains**: Lỗi crawl tin tức hay lỗi kết nối mạng không làm ảnh hưởng đến luồng WebSocket biểu đồ nến. |
 
 ---
 
-## 🛠️ Hướng Dẫn Cài Đặt & Chạy Hệ Thống (Installation & Running Guide)
+## 🛠️ Hướng Dẫn Cài Đặt & Khởi Chạy (Installation & Quick Start)
 
-### 1. Yêu Cầu Tiền Đề (Prerequisites)
+### 1. Yêu Cầu Môi Trường
 - **Python**: `>= 3.10`
 - **Node.js**: `>= 18.x`
-- **Redis Server** (Tùy chọn cho multi-worker pub/sub):
-  ```bash
-  docker run -d --name redis-broker -p 6379:6379 redis:7-alpine
-  ```
 
-### 2. Backend Setup
+### 2. Cài Đặt & Chạy Backend
 ```bash
-# Di chuyển vào thư mục backend
+# 1. Di chuyển vào thư mục backend
 cd backend
 
-# Tạo và kích hoạt môi trường ảo Python
+# 2. Tạo và kích hoạt môi trường ảo Python
+# Windows:
 python -m venv venv
-
-# On Windows:
 venv\Scripts\activate
-# On Linux/Mac:
-source venv/bin/activate
+# Linux/macOS:
+# python3 -m venv venv
+# source venv/bin/activate
 
-# Cài đặt các thư viện phụ thuộc
+# 3. Cài đặt các thư viện phụ thuộc
 pip install -r requirements.txt
 
-# Chạy server FastAPI
+# 4. Khởi chạy FastAPI Server
 uvicorn src.main:app --reload --port 8000
 ```
+- API Documentation (Swagger UI): [http://localhost:8000/docs](http://localhost:8000/docs)
 
-*Chạy Celery Worker (Nếu cần chạy tác vụ ngầm quy mô lớn):*
+### 3. Cài Đặt & Chạy Frontend
 ```bash
-celery -A src.services.search.celery_app.celery_app worker --loglevel=info
-```
-
-### 3. Frontend Setup
-```bash
-# Di chuyển vào thư mục frontend
+# 1. Di chuyển vào thư mục frontend
 cd frontend
 
-# Cài đặt packages
+# 2. Cài đặt các gói npm
 npm install
 
-# Khởi chạy server phát triển
+# 3. Khởi chạy Vite Dev Server
 npm run dev
 ```
+- Truy cập giao diện người dùng: [http://localhost:5173](http://localhost:5173)
 
 ---
 
-## 🧪 Chạy Kiểm Thử (Running Test Suite)
+## 🧪 Chạy Test Suite Tự Động (Automated Testing)
 
-Hệ thống đi kèm với test suite tự động kiểm tra toàn bộ API endpoints, Composite Strategy và Backtest Evaluator:
+Chạy bộ kiểm thử tự động kiểm tra toàn bộ API Endpoints, Composite Strategy Logic và Financial Evaluator:
 
 ```bash
-# Tại thư mục gốc dự án:
+# Chạy tại thư mục gốc của dự án:
 $env:PYTHONPATH="backend"; pytest backend/src/tests/test_main_api.py backend/src/strategies/test_composite.py backend/src/services/backtest/test_evaluator.py
 ```
 
 ---
 
-## 📋 Tài Liệu API & WebSocket Endpoints
+## 📚 Danh Mục Tài Liệu Bàn Giao (Deliverables Documentation)
 
-Truy cập Swagger UI tự động khi ứng dụng đang chạy tại: `http://localhost:8000/docs`
+Tất cả các tài liệu kỹ thuật chi tiết đã được biên soạn đầy đủ trong thư mục [`docs/`](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/):
 
-- `GET /api/v1/market/ohlcv`: Lấy nến lịch sử từ Binance.
-- `GET /api/v1/strategies`: Lấy danh sách chiến lược hiện có và tham số mặc định.
-- `POST /api/v1/backtest/run`: Thực hiện backtest đơn lẻ hoặc composite strategy.
-- `POST /api/v1/backtest/run-with-trades`: Thực hiện backtest chi tiết bao gồm lịch sử vào/thoát lệnh và markers.
-- `POST /api/v1/search/start`: Khởi chạy tìm kiếm tham số (Random Search / Genetic Algorithm).
-- `GET /api/v1/search/status`: Kiểm tra tiến độ job tìm kiếm.
-- `GET /api/v1/leaderboard`: Lấy Bảng xếp hạng Top-K chiến lược.
-- `GET /api/v1/news`: Lấy tin tức tổng hợp thị trường crypto.
-- `GET /api/v1/sentiment/summary`: Phân tích cảm xúc tin tức thị trường NLP.
-- `WS /ws/market`: Stream nến giá realtime từ Binance.
-- `WS /ws/events`: Broadcast sự kiện toàn hệ thống (Leaderboard update).
+1. 📄 **[Tài Liệu Kiến Trúc Tổng Thể (docs/architecture.md)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/architecture.md)**: Chi tiết bối cảnh hệ thống C4 Model, phân rã container/module, phân tích luồng dữ liệu và giải đáp 8 câu hỏi kiến trúc cốt lõi.
+2. 🎬 **[Kịch Bản Trình Diễn 10 Bước (docs/demo-scenario.md)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/demo-scenario.md)**: Kịch bản demo từng bước chuẩn theo tài liệu giảng viên từ Market Live $\rightarrow$ AI Search $\rightarrow$ Leaderboard $\rightarrow$ Backtest 12 cột $\rightarrow$ News NLP $\rightarrow$ AI Studio.
+3. 📝 **Danh Sách Các Quyết Định Kiến Trúc (Architecture Decision Records - ADRs)**:
+   - [ADR-001: Adoption of FastAPI & Async Architecture](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-001.md)
+   - [ADR-002: Plugin Architecture for Strategy Discovery](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-002.md)
+   - [ADR-003: Composite Strategy Pattern (AND/OR/WEIGHTED)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-003.md)
+   - [ADR-004: Event-Driven Architecture (EventBus)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-004.md)
+   - [ADR-005: Database Selection & Schema Migrations](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-005.md)
+   - [ADR-006: Dedicated Backtest Workbench & AI Strategy Studio with Standardized JSON](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-006.md)

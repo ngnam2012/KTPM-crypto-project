@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Newspaper, ExternalLink, RefreshCw, Clock, Filter } from 'lucide-react';
 import { SentimentSummary } from '../components/SentimentSummary';
+import { getDeviceTimezoneOffset, formatLocalDateTime } from '../shared/lib/timezone';
 
 interface NewsItem {
   id: string;
@@ -34,7 +35,7 @@ export const NewsPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await fetch(`http://localhost:8000/api/v1/news?limit=20&source=${selectedSource}`);
-      if (!res.ok) throw new Error("Failed to fetch news");
+      if (!res.ok) throw new Error("Failed to fetch news feed");
       const data = await res.json();
       setNews(data.data || []);
       setError(null);
@@ -51,9 +52,14 @@ export const NewsPage: React.FC = () => {
 
   useEffect(() => {
     fetchNews();
-    const interval = setInterval(fetchNews, 60000); // auto refresh every 60s
+    const interval = setInterval(fetchNews, 60000);
     return () => clearInterval(interval);
   }, [selectedSource]);
+
+  const formatLocalTime = (dateStr: string) => {
+    if (!dateStr) return '';
+    return `${formatLocalDateTime(dateStr)} (${getDeviceTimezoneOffset()})`;
+  };
 
   const timeAgo = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -70,25 +76,25 @@ export const NewsPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6 text-slate-200">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6 text-text-main">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Newspaper className="text-blue-500 w-8 h-8" />
-            Crypto News Feed
+          <h1 className="text-2xl font-bold flex items-center gap-3">
+            <Newspaper className="text-accent-blue w-7 h-7" />
+            Crypto News & Sentiment Feed
           </h1>
-          <p className="text-slate-400 mt-1">Aggregated live updates from top crypto sources.</p>
+          <p className="text-xs text-text-muted mt-1">Aggregated live feeds analyzed with FinBERT Financial NLP model.</p>
         </div>
         
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:w-48">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
             <select 
-              className="w-full bg-slate-900 border border-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-10 p-2.5 appearance-none cursor-pointer"
+              className="w-full bg-bg-surface border border-border-subtle text-xs text-text-main rounded-xl focus:border-accent-blue block pl-9 p-2.5 outline-none cursor-pointer"
               value={selectedSource}
               onChange={(e) => setSelectedSource(e.target.value)}
             >
-              <option value="all">All Sources</option>
+              <option value="all">All News Sources</option>
               {sources.map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -98,16 +104,16 @@ export const NewsPage: React.FC = () => {
           <button 
             onClick={() => fetchNews()}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700"
+            className="flex items-center gap-2 px-4 py-2.5 bg-bg-surface hover:bg-bg-hover rounded-xl transition-colors border border-border-subtle text-xs font-semibold text-text-muted hover:text-text-main cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-lg">
+        <div className="bg-bearish/10 border border-bearish/30 text-bearish-bright p-4 rounded-xl text-xs">
           {error}
         </div>
       )}
@@ -116,69 +122,69 @@ export const NewsPage: React.FC = () => {
       <SentimentSummary />
 
       {loading && news.length === 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-5 h-48 animate-pulse">
-              <div className="h-4 bg-slate-800 rounded w-1/4 mb-4"></div>
-              <div className="h-6 bg-slate-800 rounded w-3/4 mb-4"></div>
-              <div className="h-4 bg-slate-800 rounded w-full mb-2"></div>
-              <div className="h-4 bg-slate-800 rounded w-5/6"></div>
+            <div key={i} className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-5 h-48 animate-pulse">
+              <div className="h-4 bg-bg-surface rounded w-1/4 mb-4"></div>
+              <div className="h-5 bg-bg-surface rounded w-3/4 mb-3"></div>
+              <div className="h-3 bg-bg-surface rounded w-full mb-2"></div>
+              <div className="h-3 bg-bg-surface rounded w-5/6"></div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {news.map(item => (
             <a 
               key={item.id} 
               href={item.url} 
               target="_blank" 
               rel="noopener noreferrer"
-              className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:bg-slate-800/80 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/10 group flex flex-col h-full"
+              className="bg-bg-panel/70 border border-border-subtle rounded-2xl p-5 hover:bg-bg-panel transition-all hover:-translate-y-1 hover:shadow-xl hover:border-accent-blue/30 group flex flex-col h-full"
             >
               <div className="flex justify-between items-start mb-3">
-                <span className="text-xs font-semibold px-2.5 py-1 bg-slate-800 text-blue-400 rounded-md border border-slate-700 group-hover:bg-slate-700">
+                <span className="text-[11px] font-bold px-2.5 py-1 bg-bg-surface text-accent-blue rounded-lg border border-border-subtle">
                   {item.source}
                 </span>
-                <span className="flex items-center gap-1 text-xs text-slate-500">
+                <span className="flex items-center gap-1 text-[11px] text-text-muted" title={formatLocalTime(item.published_at)}>
                   <Clock className="w-3 h-3" />
                   {timeAgo(item.published_at)}
                 </span>
               </div>
               
-              <h2 className="text-lg font-bold text-slate-200 mb-3 line-clamp-2 group-hover:text-blue-400 transition-colors">
+              <h2 className="text-sm font-bold text-text-main mb-2.5 line-clamp-2 group-hover:text-accent-blue transition-colors">
                 {item.title}
               </h2>
               
               <div 
-                className="text-sm text-slate-400 line-clamp-3 mb-4 flex-1"
+                className="text-xs text-text-muted line-clamp-3 mb-4 flex-1 leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: item.content }}
               />
               
-              <div className="mt-auto pt-4 border-t border-slate-800 flex justify-between items-center">
+              <div className="mt-auto pt-3 border-t border-border-subtle/50 flex justify-between items-center text-xs">
                 {item.sentiment_label ? (
-                  <span className={`text-xs font-medium px-2 py-1 rounded-md ${
-                    item.sentiment_label === 'positive' ? 'bg-emerald-500/10 text-emerald-400' :
-                    item.sentiment_label === 'negative' ? 'bg-red-500/10 text-red-400' :
-                    'bg-slate-700 text-slate-300'
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase ${
+                    item.sentiment_label.toUpperCase() === 'POSITIVE' ? 'bg-bullish/15 text-bullish-bright border border-bullish/30' :
+                    item.sentiment_label.toUpperCase() === 'NEGATIVE' ? 'bg-bearish/15 text-bearish-bright border border-bearish/30' :
+                    'bg-bg-surface text-text-muted border border-border-subtle'
                   }`}>
-                    {item.sentiment_label.toUpperCase()}
+                    {item.sentiment_label.toUpperCase()} ({item.sentiment_score ? Math.round(item.sentiment_score * 100) : 50}%)
                   </span>
                 ) : (
                   <span></span>
                 )}
                 
-                <span className="text-xs text-blue-500 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity font-medium">
-                  Read more <ExternalLink className="w-3 h-3" />
+                <span className="text-[11px] text-accent-blue flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity font-semibold">
+                  Read article <ExternalLink className="w-3 h-3" />
                 </span>
               </div>
             </a>
           ))}
           
           {news.length === 0 && !loading && (
-            <div className="col-span-full py-12 text-center text-slate-500 bg-slate-900/50 rounded-xl border border-slate-800 border-dashed">
+            <div className="col-span-full py-12 text-center text-text-muted bg-bg-panel/50 rounded-2xl border border-border-subtle border-dashed">
               <Newspaper className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p>No news articles found for this source.</p>
+              <p className="text-xs">No news articles found for this source.</p>
             </div>
           )}
         </div>

@@ -50,6 +50,7 @@ class LeaderboardService:
             cls._instance = super(LeaderboardService, cls).__new__(cls)
             cls._instance._entries: Dict[str, LeaderboardEntry] = {}
             cls._instance._redis = None
+            cls._instance._redis_disabled = os.getenv("REDIS_ENABLED", "false").lower() not in ("true", "1")
             cls._instance._load_from_db()
         return cls._instance
 
@@ -59,15 +60,18 @@ class LeaderboardService:
 
     def _get_redis_sync(self):
         """Return a *synchronous* Redis client (used in sync context)."""
+        if getattr(self, "_redis_disabled", False):
+            return None
         if self._redis is not None:
             return self._redis
         try:
             import redis as sync_redis
-            client = sync_redis.from_url(REDIS_URL, decode_responses=True)
+            client = sync_redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=0.5)
             client.ping()
             self._redis = client
             logger.info("LeaderboardService connected to Redis.")
         except Exception as exc:
+            self._redis_disabled = True
             logger.warning(
                 f"LeaderboardService Redis unavailable ({exc}). "
                 "Using in-process dict only."
