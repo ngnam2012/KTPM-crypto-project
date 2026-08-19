@@ -24,3 +24,9 @@ Thumbs.db
 # Agents
 .agents/
 .gemini/
+
+# Evaluation and local reports
+review-code.md
+backend_code_review_report.md
+project_evaluation_report.md
+*.pdf

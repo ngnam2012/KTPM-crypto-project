@@ -1,226 +1,199 @@
-import React, { useState, useRef } from 'react';
-import { DashboardLayout } from '../components/Layout/DashboardLayout';
-import { TradingChart, type TradingChartHandle } from '../components/Charts/TradingChart';
-import { TradeDetailTable, type TradeRecord } from '../components/TradeDetailTable';
-import { Play, Trophy, AlertCircle, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { TradingChart } from '../components/Charts/TradingChart';
+import { 
+  Activity, 
+  FlaskConical, 
+  Bot, 
+  Trophy, 
+  ExternalLink, 
+  Radio, 
+  Sparkles, 
+  TrendingUp, 
+  ShieldCheck,
+  Zap
+} from 'lucide-react';
+import { getDeviceTimezoneOffset } from '../shared/lib/timezone';
 
 export const Dashboard: React.FC = () => {
   const [globalSymbol, setGlobalSymbol] = useState("BTC/USDT");
-  const [selectedStrategies, setSelectedStrategies] = useState<string[]>([]);
-  const [metrics, setMetrics] = useState<any>(null);
-  const [trades, setTrades] = useState<TradeRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-  const chart15mRef = useRef<TradingChartHandle>(null);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
-  
-  const [compositeLogic, setCompositeLogic] = useState("AND");
-  const [strategyWeights, setStrategyWeights] = useState<Record<string, number>>({});
 
-  const handleWeightChange = (id: string, weight: number) => {
-    setStrategyWeights(prev => ({ ...prev, [id]: weight }));
-  };
-
-  const toggleStrategy = (id: string) => {
-    setSelectedStrategies(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const handleRunBacktest = async () => {
-    if (selectedStrategies.length === 0) {
-      setToast({ message: "Please select at least one strategy from the sidebar.", type: 'error' });
-      setTimeout(() => setToast(null), 3000);
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const payload = {
-        strategies: selectedStrategies.map(id => ({ 
-          id, 
-          params: compositeLogic === "WEIGHTED" ? { weight: strategyWeights[id] || 0.5 } : {} 
-        })),
-        logic: compositeLogic,
-        symbol: globalSymbol,
-        timeframe: "15m", // We run the backtest on the 15m timeframe for more signals
-        limit: 2000
-      };
-      
-      const res = await fetch("http://localhost:8000/api/v1/backtest/run-with-trades", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || "Backtest request failed");
-      }
-      
-      const data = await res.json();
-      if (data.metrics) {
-        setMetrics(data.metrics);
-      }
-      if (data.trades) {
-        setTrades(data.trades);
-      }
-      if (data.markers && chart15mRef.current) {
-        chart15mRef.current.setMarkers(data.markers);
-      }
-      
-      setToast({ message: 'Backtest completed successfully!', type: 'success' });
-      setTimeout(() => setToast(null), 3000);
-    } catch (e: any) {
-      console.error(e);
-      setToast({ message: e.message || 'Backtest failed', type: 'error' });
-      setTimeout(() => setToast(null), 5000);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTradeClick = (trade: TradeRecord) => {
-    if (chart15mRef.current) {
-      const entryTime = new Date(trade.entry_time).getTime() / 1000;
-      const exitTime = new Date(trade.exit_time).getTime() / 1000;
-      chart15mRef.current.highlightTrade(entryTime, exitTime);
-    }
-  };
+  const symbols = [
+    { label: "Bitcoin", value: "BTC/USDT", ticker: "BTC" },
+    { label: "Ethereum", value: "ETH/USDT", ticker: "ETH" },
+    { label: "Solana", value: "SOL/USDT", ticker: "SOL" },
+    { label: "Binance Coin", value: "BNB/USDT", ticker: "BNB" },
+    { label: "Ripple", value: "XRP/USDT", ticker: "XRP" },
+  ];
 
   return (
-    <DashboardLayout selectedStrategies={selectedStrategies} toggleStrategy={toggleStrategy}>
-      <div className="flex flex-col gap-4 h-full">
-        <div className="flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">Multi-Timeframe Analysis</h1>
-            <select
-              value={globalSymbol}
-              onChange={(e) => setGlobalSymbol(e.target.value)}
-              className="bg-bg-panel/40 border border-border-subtle text-text-main text-sm rounded-xl focus:ring-brand-500 focus:border-brand-500 block p-2 outline-none backdrop-blur-md"
-            >
-              <option value="BTC/USDT">BTC/USDT</option>
-              <option value="ETH/USDT">ETH/USDT</option>
-              <option value="SOL/USDT">SOL/USDT</option>
-              <option value="BNB/USDT">BNB/USDT</option>
-              <option value="XRP/USDT">XRP/USDT</option>
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={handleRunBacktest}
-              disabled={loading}
-              className={`flex items-center gap-2 px-6 py-3 bg-gradient-to-tr from-brand-500 to-brand-600 text-bg-deep font-semibold rounded-full transition-all duration-300 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.03] hover:shadow-md'}`}
-            >
-              <Play size={18} fill="currentColor" />
-              {loading ? 'Running Engine...' : 'Run Backtest'}
-            </button>
+    <div className="p-4 md:p-6 max-w-[1750px] mx-auto space-y-6 text-text-main flex flex-col min-h-screen">
+      {/* Top Header & Ticker Bar */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-bg-panel/80 p-5 rounded-2xl border border-border-subtle backdrop-blur-xl shadow-lg shrink-0">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-brand-500/10 text-brand-400 rounded-xl border border-brand-500/20 shrink-0">
+              <Activity className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-text-main flex items-center gap-2 flex-wrap">
+                Real-Time Multi-Timeframe Monitor
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-bullish/15 text-bullish-bright border border-bullish/30 flex items-center gap-1 font-mono">
+                  <Radio size={12} className="animate-pulse" /> LIVE STREAM ({getDeviceTimezoneOffset()})
+                </span>
+              </h1>
+              <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                Simultaneously monitor 4 independent timeframes (15m, 1h, 4h, 1d) with ultra-low latency Binance WebSocket multiplexer.
+              </p>
+            </div>
           </div>
         </div>
-        
-        {selectedStrategies.length > 1 && (
-          <div className="shrink-0 bg-bg-panel/60 p-4 rounded-xl border border-brand-500/30 backdrop-blur-md">
-            <div className="flex items-center gap-4 mb-4">
-              <span className="text-sm font-bold text-slate-300">Composite Logic:</span>
-              <select
-                value={compositeLogic}
-                onChange={(e) => setCompositeLogic(e.target.value)}
-                className="bg-bg-panel/40 border border-border-subtle text-text-main text-sm rounded-xl focus:ring-brand-500 focus:border-brand-500 block p-2 outline-none"
+
+        {/* Global Symbol & Quick Action */}
+        <div className="flex items-center gap-3 w-full xl:w-auto shrink-0">
+          <div className="flex items-center gap-1.5 bg-bg-deep border border-border-subtle rounded-xl p-1.5 flex-1 lg:flex-none">
+            {symbols.map(s => (
+              <button
+                key={s.value}
+                onClick={() => setGlobalSymbol(s.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  globalSymbol === s.value
+                    ? 'bg-brand-500 text-bg-deep shadow-sm'
+                    : 'text-text-muted hover:text-text-main hover:bg-bg-surface'
+                }`}
               >
-                <option value="AND">AND (All must agree)</option>
-                <option value="OR">OR (Any can signal)</option>
-                <option value="WEIGHTED">WEIGHTED (Score based on weights)</option>
-              </select>
-            </div>
-            
-            {compositeLogic === 'WEIGHTED' && (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                {selectedStrategies.map(id => (
-                  <div key={id} className="bg-bg-deep/50 p-4 rounded-xl border border-border-subtle">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs font-semibold text-text-main truncate max-w-[150px]">{id}</span>
-                      <span className="text-xs text-brand-500 font-mono">{(strategyWeights[id] || 0.5).toFixed(2)}</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0.1" 
-                      max="1.0" 
-                      step="0.1" 
-                      value={strategyWeights[id] || 0.5} 
-                      onChange={(e) => handleWeightChange(id, parseFloat(e.target.value))}
-                      className="w-full h-1 bg-border-subtle rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+                <span>{s.ticker}</span>
+              </button>
+            ))}
           </div>
-        )}
-        
-        {metrics && (
-          <div className="shrink-0 grid grid-cols-4 gap-4 bg-bg-panel/60 p-5 rounded-xl border border-brand-500/30 backdrop-blur-md shadow-lg shadow-brand-500/5 animate-in fade-in slide-in-from-top-4 duration-500">
-            <div>
-              <div className="text-sm font-medium text-text-muted uppercase tracking-wider">Total Return</div>
-              <div className={`text-3xl font-bold mt-1 font-mono ${(metrics.total_return || 0) >= 0 ? 'text-bullish' : 'text-bearish'}`}>
-                {((metrics.total_return || 0) * 100).toFixed(2)}%
-              </div>
+
+          <Link
+            to="/backtest"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-bg-deep font-bold rounded-xl text-xs transition-all duration-300 shadow-md shadow-brand-500/20 hover:scale-[1.02]"
+          >
+            <FlaskConical size={16} />
+            <span>Launch Backtest Lab</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Feature Highlights Banner */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+        <Link 
+          to="/backtest"
+          className="bg-bg-panel/60 hover:bg-bg-panel border border-border-subtle hover:border-brand-500/40 p-4 rounded-2xl transition-all duration-300 group shadow-md"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-brand-400 font-bold text-sm">
+              <FlaskConical size={18} />
+              <span>Backtest Workbench</span>
             </div>
-            <div>
-              <div className="text-sm font-medium text-text-muted uppercase tracking-wider">Winrate</div>
-              <div className="text-3xl font-bold mt-1 text-text-main font-mono">
-                {((metrics.winrate || 0) * 100).toFixed(2)}%
-              </div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-text-muted uppercase tracking-wider">Max Drawdown</div>
-              <div className="text-3xl font-bold mt-1 text-bearish font-mono">
-                {((metrics.max_drawdown || 0) * 100).toFixed(2)}%
-              </div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-text-muted uppercase tracking-wider">Total Trades</div>
-              <div className="text-3xl font-bold mt-1 text-brand-500 font-mono">
-                {metrics.total_trades || 0}
-              </div>
-            </div>
+            <ExternalLink size={14} className="text-text-muted group-hover:text-brand-400 transition-colors" />
           </div>
-        )}
-        
-        <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div className="xl:col-span-2 h-[500px]">
-              <TradingChart ref={chart15mRef} symbol={globalSymbol} initialTimeframe="15m" />
+          <p className="text-xs text-text-muted leading-relaxed">
+            Institutional backtest suite with 12-column trade execution log, 5bps slippage simulation, Stop Loss / Take Profit rules, and custom date range filters.
+          </p>
+        </Link>
+
+        <Link 
+          to="/search"
+          className="bg-bg-panel/60 hover:bg-bg-panel border border-border-subtle hover:border-accent-purple/40 p-4 rounded-2xl transition-all duration-300 group shadow-md"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-accent-purple font-bold text-sm">
+              <Bot size={18} />
+              <span>AI Search Engine</span>
             </div>
-            <div className="xl:col-span-1 h-[500px]">
-              <TradeDetailTable trades={trades} onRowClick={handleTradeClick} />
-            </div>
+            <ExternalLink size={14} className="text-text-muted group-hover:text-accent-purple transition-colors" />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="h-[350px]">
-              <TradingChart symbol={globalSymbol} initialTimeframe="1h" />
+          <p className="text-xs text-text-muted leading-relaxed">
+            Discover optimal parameter combinations using Genetic Algorithms and continuous background search loops.
+          </p>
+        </Link>
+
+        <Link 
+          to="/leaderboard"
+          className="bg-bg-panel/60 hover:bg-bg-panel border border-border-subtle hover:border-brand-500/40 p-4 rounded-2xl transition-all duration-300 group shadow-md"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-brand-400 font-bold text-sm">
+              <Trophy size={18} />
+              <span>Strategy Leaderboard</span>
             </div>
-            <div className="h-[350px]">
-              <TradingChart symbol={globalSymbol} initialTimeframe="4h" />
+            <ExternalLink size={14} className="text-text-muted group-hover:text-brand-400 transition-colors" />
+          </div>
+          <p className="text-xs text-text-muted leading-relaxed">
+            Top-performing quantitative strategies evaluated by weighted composite score and synchronized in real-time via Redis Streams.
+          </p>
+        </Link>
+      </div>
+
+      {/* 4 Multi-Timeframe Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+        {/* Chart 1: 15m */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
+          <div className="flex justify-between items-center mb-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
+              <span className="text-xs font-bold px-2 py-0.5 rounded bg-brand-500/10 text-brand-400 font-mono">15m (Scalp / Intraday)</span>
             </div>
-            <div className="h-[350px]">
-              <TradingChart symbol={globalSymbol} initialTimeframe="1d" />
+            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
+            </span>
+          </div>
+          <div className="flex-1 w-full h-full min-h-[380px]">
+            <TradingChart symbol={globalSymbol} initialTimeframe="15m" />
+          </div>
+        </div>
+
+        {/* Chart 2: 1h */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
+          <div className="flex justify-between items-center mb-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
+              <span className="text-xs font-bold px-2 py-0.5 rounded bg-accent-purple/10 text-accent-purple font-mono">1h (Hourly Standard)</span>
             </div>
+            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
+            </span>
+          </div>
+          <div className="flex-1 w-full h-full min-h-[380px]">
+            <TradingChart symbol={globalSymbol} initialTimeframe="1h" />
+          </div>
+        </div>
+
+        {/* Chart 3: 4h */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
+          <div className="flex justify-between items-center mb-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
+              <span className="text-xs font-bold px-2 py-0.5 rounded bg-accent-blue/10 text-accent-blue font-mono">4h (Swing Trend)</span>
+            </div>
+            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
+            </span>
+          </div>
+          <div className="flex-1 w-full h-full min-h-[380px]">
+            <TradingChart symbol={globalSymbol} initialTimeframe="4h" />
+          </div>
+        </div>
+
+        {/* Chart 4: 1d */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
+          <div className="flex justify-between items-center mb-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
+              <span className="text-xs font-bold px-2 py-0.5 rounded bg-accent-cyan/10 text-accent-cyan font-mono">1d (Macro Daily)</span>
+            </div>
+            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
+            </span>
+          </div>
+          <div className="flex-1 w-full h-full min-h-[380px]">
+            <TradingChart symbol={globalSymbol} initialTimeframe="1d" />
           </div>
         </div>
       </div>
-      
-      {toast && (
-        <div className={`fixed bottom-6 right-6 px-6 py-4 rounded-xl border flex items-center justify-between gap-4 shadow-xl z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 backdrop-blur-xl ${
-          toast.type === 'success' 
-            ? 'bg-bullish/10 border-bullish/30 text-bullish' 
-            : 'bg-bearish/10 border-bearish/30 text-bearish'
-        }`}>
-          <div className="flex items-center gap-3">
-            {toast.type === 'success' ? <Trophy size={20} className="text-bullish" /> : <AlertCircle size={20} className="text-bearish" />}
-            <span className="font-semibold text-[15px]">{toast.message}</span>
-          </div>
-          <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-    </DashboardLayout>
+    </div>
   );
 };

@@ -18,6 +18,7 @@ from src.api.websockets.market_ws import router as market_ws_router
 from src.api.v1.news_router import router as news_router
 from src.api.v1.sentiment_router import router as sentiment_router
 from src.api.websockets.events_ws import router as events_ws_router
+from src.api.v1.custom_strategy_router import router as custom_strategy_router
 
 from src.infrastructure.database.config import engine, Base
 import src.infrastructure.database.models 
@@ -41,6 +42,29 @@ async def lifespan(app: FastAPI):
     # Create database tables
     Base.metadata.create_all(bind=engine)
     
+    # Safe schema migration for SQLite
+    try:
+        import sqlalchemy
+        with engine.connect() as conn:
+            for query in [
+                "ALTER TABLE strategy_definitions ADD COLUMN description TEXT",
+                "ALTER TABLE strategy_definitions ADD COLUMN source_prompt TEXT",
+                "ALTER TABLE trade_records ADD COLUMN symbol TEXT",
+                "ALTER TABLE trade_records ADD COLUMN volume_usd FLOAT DEFAULT 100.0",
+                "ALTER TABLE trade_records ADD COLUMN stop_loss FLOAT",
+                "ALTER TABLE trade_records ADD COLUMN take_profit FLOAT",
+                "ALTER TABLE trade_records ADD COLUMN fee FLOAT DEFAULT 0.0",
+                "ALTER TABLE trade_records ADD COLUMN slippage FLOAT DEFAULT 0.0",
+                "ALTER TABLE trade_records ADD COLUMN profit_usd FLOAT DEFAULT 0.0",
+            ]:
+                try:
+                    conn.execute(sqlalchemy.text(query))
+                except Exception:
+                    pass
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Database migration notice: {e}")
+        
     # Initialize Redis EventBus if available
     await event_bus.init_redis()
     
@@ -74,6 +98,7 @@ app.include_router(market_ws_router)
 app.include_router(news_router)
 app.include_router(sentiment_router)
 app.include_router(events_ws_router)
+app.include_router(custom_strategy_router)
 
 # Request / Response Pydantic Models
 class StrategyConfig(BaseModel):
@@ -86,6 +111,11 @@ class BacktestRequest(BaseModel):
     symbol: str = "BTC/USDT"
     timeframe: str = "1h"
     limit: int = 2000
+    initial_capital: float = 100.0
+    fee_pct: float = 0.05
+    slippage_bps: float = 5.0
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     take_profit_pct: Optional[float] = None
     stop_loss_pct: Optional[float] = None
     trailing_stop_pct: Optional[float] = None
@@ -100,12 +130,15 @@ class BacktestResponse(BaseModel):
     timeframe: str
     metrics: Dict[str, Any]
 
+from dateutil.parser import parse
+
 class BacktestWithTradesResponse(BaseModel):
     symbol: str
     timeframe: str
     metrics: Dict[str, Any]
     trades: List[Dict[str, Any]]
     markers: List[Dict[str, Any]]
+    ohlcv: Optional[List[Dict[str, Any]]] = None
 
 @app.get("/")
 async def root():
@@ -121,13 +154,15 @@ async def get_ohlcv(
     symbol: str = "BTC/USDT",
     timeframe: str = "1h",
     limit: int = 100,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     adapter: BinanceAdapter = Depends(get_binance_adapter)
 ):
     """
     Fetches OHLCV data asynchronously from Binance.
     """
     try:
-        df = await adapter.fetch_ohlcv(symbol, timeframe, limit)
+        df = await adapter.fetch_ohlcv(symbol, timeframe, limit=limit, start_date=start_date, end_date=end_date)
         if df.empty:
             return OHLCVResponse(symbol=symbol, timeframe=timeframe, data=[])
             
@@ -153,7 +188,13 @@ async def run_backtest(
         
     try:
         # 1. Fetch market data asynchronously
-        df = await adapter.fetch_ohlcv(request.symbol, request.timeframe, request.limit)
+        df = await adapter.fetch_ohlcv(
+            request.symbol, 
+            request.timeframe, 
+            limit=request.limit,
+            start_date=request.start_date,
+            end_date=request.end_date
+        )
         if df.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data.")
             
@@ -183,7 +224,14 @@ async def run_backtest(
             signals = await asyncio.to_thread(composite.generate_signals, df, composite_params)
             
         # 4. Evaluate in thread pool
-        metrics = await asyncio.to_thread(BacktestEvaluator.evaluate, df, signals)
+        metrics = await asyncio.to_thread(
+            BacktestEvaluator.evaluate, 
+            df, 
+            signals,
+            initial_capital=request.initial_capital,
+            fee_pct=request.fee_pct,
+            slippage_bps=request.slippage_bps
+        )
         
         # 5. Push event
         strat_name = strategy_instances[0].name if len(strategy_instances) == 1 else composite.name
@@ -223,7 +271,13 @@ async def run_backtest_with_trades(
         
     try:
         # 1. Fetch market data asynchronously
-        df = await adapter.fetch_ohlcv(request.symbol, request.timeframe, request.limit)
+        df = await adapter.fetch_ohlcv(
+            request.symbol, 
+            request.timeframe, 
+            limit=request.limit,
+            start_date=request.start_date,
+            end_date=request.end_date
+        )
         if df.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data.")
             
@@ -253,23 +307,116 @@ async def run_backtest_with_trades(
             signals = await asyncio.to_thread(composite.generate_signals, df, composite_params)
             
         # 4. Evaluate metrics and extract trades in thread pool
-        metrics = await asyncio.to_thread(BacktestEvaluator.evaluate, df, signals)
+        metrics = await asyncio.to_thread(
+            BacktestEvaluator.evaluate, 
+            df, 
+            signals,
+            initial_capital=request.initial_capital,
+            fee_pct=request.fee_pct,
+            slippage_bps=request.slippage_bps
+        )
         
         raw_trades = await asyncio.to_thread(
             TradeSimulator.simulate,
-            df, signals, 
-            request.take_profit_pct, 
-            request.stop_loss_pct, 
-            request.trailing_stop_pct
+            df, 
+            signals, 
+            symbol=request.symbol,
+            initial_capital=request.initial_capital,
+            tp_pct=request.take_profit_pct, 
+            sl_pct=request.stop_loss_pct, 
+            trailing_pct=request.trailing_stop_pct,
+            fee_pct=request.fee_pct,
+            slippage_bps=request.slippage_bps
         )
         trades = []
+        markers = []
         for t in raw_trades:
             td = t.to_dict()
             td['type'] = td.pop('trade_type')
             td['id'] = str(td.pop('trade_id'))
             trades.append(td)
-            
-        markers = await asyncio.to_thread(BacktestEvaluator.extract_markers, df, signals)
+
+            # Generate precise LONG/SHORT visual markers
+            e_time = t.entry_time
+            e_val = None
+            if isinstance(e_time, str):
+                try:
+                    e_val = int(parse(e_time).timestamp())
+                except:
+                    pass
+            elif hasattr(e_time, 'timestamp'):
+                e_val = int(e_time.timestamp())
+            elif isinstance(e_time, (int, float)):
+                e_val = int(e_time / 1000 if e_time > 2e9 else e_time)
+
+            x_time = t.exit_time
+            x_val = None
+            if isinstance(x_time, str):
+                try:
+                    x_val = int(parse(x_time).timestamp())
+                except:
+                    pass
+            elif hasattr(x_time, 'timestamp'):
+                x_val = int(x_time.timestamp())
+            elif isinstance(x_time, (int, float)):
+                x_val = int(x_time / 1000 if x_time > 2e9 else x_time)
+
+            is_win = t.profit_pct >= 0
+            p_sign = "+" if is_win else ""
+
+            if td['type'] == "LONG":
+                # LONG Entry (Emerald arrow up below bar)
+                if e_val:
+                    markers.append({
+                        'time': e_val,
+                        'position': 'belowBar',
+                        'color': '#10B981',
+                        'shape': 'arrowUp',
+                        'text': f"LONG #{td['id']} @ ${t.entry_price:,.2f}"
+                    })
+                # LONG Exit (Above bar)
+                if x_val:
+                    markers.append({
+                        'time': x_val,
+                        'position': 'aboveBar',
+                        'color': '#10B981' if is_win else '#F43F5E',
+                        'shape': 'arrowDown',
+                        'text': f"EXIT #{td['id']} ({p_sign}{t.profit_pct:.2f}%)"
+                    })
+            elif td['type'] == "SHORT":
+                # SHORT Entry (Coral red arrow down above bar)
+                if e_val:
+                    markers.append({
+                        'time': e_val,
+                        'position': 'aboveBar',
+                        'color': '#F43F5E',
+                        'shape': 'arrowDown',
+                        'text': f"SHORT #{td['id']} @ ${t.entry_price:,.2f}"
+                    })
+                # SHORT Exit (Below bar)
+                if x_val:
+                    markers.append({
+                        'time': x_val,
+                        'position': 'belowBar',
+                        'color': '#10B981' if is_win else '#F43F5E',
+                        'shape': 'arrowUp',
+                        'text': f"EXIT #{td['id']} ({p_sign}{t.profit_pct:.2f}%)"
+                    })
+
+        markers.sort(key=lambda m: m['time'])
+
+        # OHLCV records for exact chart alignment
+        ohlcv_records = []
+        for idx in range(len(df)):
+            t = df['timestamp'].iloc[idx] if 'timestamp' in df.columns else str(df.index[idx])
+            ohlcv_records.append({
+                "timestamp": str(t),
+                "open": float(df['open'].iloc[idx]),
+                "high": float(df['high'].iloc[idx]),
+                "low": float(df['low'].iloc[idx]),
+                "close": float(df['close'].iloc[idx]),
+                "volume": float(df['volume'].iloc[idx]) if 'volume' in df.columns else 0.0,
+            })
         
         # 5. Push event
         strat_name = strategy_instances[0].name if len(strategy_instances) == 1 else composite.name
@@ -288,7 +435,8 @@ async def run_backtest_with_trades(
             timeframe=request.timeframe,
             metrics=metrics,
             trades=trades,
-            markers=markers
+            markers=markers,
+            ohlcv=ohlcv_records
         )
         
     except HTTPException:
@@ -296,4 +444,3 @@ async def run_backtest_with_trades(
     except Exception as e:
         logger.exception(f"Backtest error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-

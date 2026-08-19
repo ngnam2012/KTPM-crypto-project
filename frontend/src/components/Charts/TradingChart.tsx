@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { createChart, ColorType, CandlestickSeries, createSeriesMarkers, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 import { useWebSocket } from '../../shared/hooks/useWebSocket';
+import { getDeviceTimezoneOffset } from '../../shared/lib/timezone';
 
 export interface TradingChartProps {
   symbol: string;
@@ -9,8 +10,10 @@ export interface TradingChartProps {
 
 export interface TradingChartHandle {
   setMarkers: (markers: any[]) => void;
+  setCandles?: (candles: any[]) => void;
   setIndicatorLines: (lines: { name: string, data: any[] }[]) => void;
   highlightTrade: (entryTime: number, exitTime: number) => void;
+  fitContent?: () => void;
 }
 
 interface OHLCV {
@@ -26,6 +29,7 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [currentTimeframe, setCurrentTimeframe] = useState(initialTimeframe);
+  const [activeMarkersCount, setActiveMarkersCount] = useState<number>(0);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const { isConnected, lastCandle } = useWebSocket(symbol, currentTimeframe);
@@ -34,25 +38,52 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
   useImperativeHandle(ref, () => ({
     setMarkers: (markers) => {
       if (seriesRef.current) {
-        // Sort markers by time as required by lightweight-charts
-        const sortedMarkers = [...markers].sort((a, b) => a.time - b.time);
+        // Filter and sort markers by time ascending as required by lightweight-charts
+        const validMarkers = (markers || [])
+          .filter(m => m && typeof m.time === 'number' && !isNaN(m.time))
+          .sort((a, b) => a.time - b.time);
         
+        setActiveMarkersCount(validMarkers.length);
+
         if (!markersPluginRef.current) {
           markersPluginRef.current = createSeriesMarkers(seriesRef.current);
         }
-        markersPluginRef.current.setMarkers(sortedMarkers);
+        markersPluginRef.current.setMarkers(validMarkers);
+      }
+    },
+    setCandles: (candles) => {
+      if (seriesRef.current && candles && candles.length > 0) {
+        const formattedData = candles.map((item: any) => {
+          let timeVal: number;
+          if (typeof item.time === 'number') {
+            timeVal = item.time > 1e11 ? item.time / 1000 : item.time;
+          } else {
+            const isUTC = !item.timestamp.includes('Z') && !item.timestamp.includes('+');
+            timeVal = new Date(isUTC ? item.timestamp + 'Z' : item.timestamp).getTime() / 1000;
+          }
+          return {
+            time: timeVal as Time,
+            open: item.open,
+            high: item.high,
+            low: item.low,
+            close: item.close,
+          };
+        });
+        formattedData.sort((a: any, b: any) => (a.time as number) - (b.time as number));
+        seriesRef.current.setData(formattedData);
+        if (chartRef.current) {
+          chartRef.current.timeScale().fitContent();
+        }
       }
     },
     setIndicatorLines: (lines) => {
-      // Future implementation for indicators if API provides them
-      // E.g., chartRef.current.addLineSeries().setData(...)
       console.log("Setting indicator lines:", lines);
     },
     highlightTrade: (entryTime: number, exitTime: number) => {
       if (chartRef.current) {
-        // Add a small buffer around the trade duration
-        const buffer = (exitTime - entryTime) * 0.1;
-        const from = (entryTime - buffer) as Time;
+        const duration = Math.max(exitTime - entryTime, 1800);
+        const buffer = duration * 0.4;
+        const from = Math.max(0, (entryTime - buffer)) as Time;
         const to = (exitTime + buffer) as Time;
         
         chartRef.current.timeScale().setVisibleRange({
@@ -60,13 +91,15 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
           to
         });
       }
+    },
+    fitContent: () => {
+      chartRef.current?.timeScale().fitContent();
     }
   }));
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Initialize Chart
     const handleResize = () => {
       chartRef.current?.applyOptions({ width: chartContainerRef.current?.clientWidth });
     };
@@ -74,34 +107,42 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#848E9C',
+        textColor: '#94A3B8',
         fontFamily: 'JetBrains Mono, monospace',
       },
       grid: {
-        vertLines: { color: 'rgba(43, 49, 57, 0.3)' },
-        horzLines: { color: 'rgba(43, 49, 57, 0.3)' },
+        vertLines: { color: 'rgba(148, 163, 184, 0.08)' },
+        horzLines: { color: 'rgba(148, 163, 184, 0.08)' },
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
       localization: {
         timeFormatter: (timestamp: number) => {
-          return new Date(timestamp * 1000).toLocaleString(undefined, {
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-          });
+          return new Date(timestamp * 1000).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }) + ' ' + getDeviceTimezoneOffset();
         },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: 'rgba(148, 163, 184, 0.15)',
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(148, 163, 184, 0.15)',
       }
     });
 
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#0ECB81',
-      downColor: '#F6465D',
+      upColor: '#10B981',
+      downColor: '#F43F5E',
       borderVisible: false,
-      wickUpColor: '#0ECB81',
-      wickDownColor: '#F6465D',
+      wickUpColor: '#34D399',
+      wickDownColor: '#F87171',
     });
 
     chartRef.current = chart;
@@ -109,11 +150,9 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
 
     window.addEventListener('resize', handleResize);
 
-    // Fetch Data
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Using localhost:8000 assuming FastAPI runs on default port
         const response = await fetch(`http://localhost:8000/api/v1/market/ohlcv?symbol=${encodeURIComponent(symbol)}&timeframe=${currentTimeframe}&limit=200`);
         const data = await response.json();
         
@@ -128,8 +167,7 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
               close: item.close,
             };
           });
-          // Lightweight charts requires data to be sorted by time ascending
-          formattedData.sort((a: any, b: any) => a.time - b.time);
+          formattedData.sort((a: any, b: any) => (a.time as number) - (b.time as number));
           candlestickSeries.setData(formattedData);
         }
       } catch (error) {
@@ -154,7 +192,7 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
     };
   }, [symbol, currentTimeframe]);
 
-  // Update chart when a new candle arrives from WebSocket
+  // Real-time tick update from WebSocket
   useEffect(() => {
     if (seriesRef.current && lastCandle) {
       const isUTC = !lastCandle.timestamp.includes('Z') && !lastCandle.timestamp.includes('+');
@@ -170,12 +208,12 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
 
   return (
     <div className="w-full h-full relative glass-panel overflow-hidden flex flex-col">
-      <div className="absolute top-6 left-6 z-10 bg-bg-panel/60 px-4 py-2 rounded-xl border border-border-subtle flex items-center gap-3 backdrop-blur-xl shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
-        <span className="font-bold text-text-main font-mono text-lg">{symbol}</span>
+      <div className="absolute top-4 left-4 z-10 bg-bg-panel/80 px-3.5 py-1.5 rounded-xl border border-border-subtle flex items-center gap-3 backdrop-blur-xl shadow-md">
+        <span className="font-bold text-text-main font-mono text-sm">{symbol}</span>
         <select 
           value={currentTimeframe} 
           onChange={(e) => setCurrentTimeframe(e.target.value)}
-          className="text-brand-500 font-bold px-2 py-1 bg-brand-500/10 rounded-lg border-none outline-none cursor-pointer hover:bg-brand-500/20 transition-colors font-mono"
+          className="text-brand-400 font-bold px-2 py-0.5 bg-bg-surface rounded-lg border border-border-subtle outline-none cursor-pointer hover:bg-bg-hover transition-colors font-mono text-xs"
         >
           <option value="1m">1m</option>
           <option value="5m">5m</option>
@@ -185,15 +223,38 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
           <option value="1d">1d</option>
         </select>
         {loading ? (
-          <span className="text-xs text-text-muted animate-pulse ml-2">Loading...</span>
+          <span className="text-[11px] text-text-muted animate-pulse font-mono">Loading...</span>
         ) : isConnected ? (
-          <span className="text-xs text-red-500 font-bold animate-pulse ml-2 flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-red-500"></span> LIVE
+          <span className="text-[11px] text-bullish-bright font-bold animate-pulse font-mono flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-bullish-bright"></span> LIVE
           </span>
         ) : (
-          <span className="text-xs text-yellow-500 font-medium ml-2">Reconnecting...</span>
+          <span className="text-[11px] text-brand-400 font-medium font-mono">Reconnecting...</span>
         )}
       </div>
+
+      {/* Top Right Signal Legend Overlay */}
+      <div className="absolute top-4 right-4 z-10 hidden sm:flex items-center gap-2.5 bg-bg-panel/85 px-3.5 py-1.5 rounded-xl border border-border-subtle backdrop-blur-xl shadow-md text-[11px] font-mono select-none">
+        <span className="flex items-center gap-1.5 text-bullish-bright font-semibold">
+          <span className="inline-block w-2 h-2 rounded-full bg-bullish-bright"></span>
+          ▲ LONG
+        </span>
+        <span className="text-border-subtle">|</span>
+        <span className="flex items-center gap-1.5 text-bearish-bright font-semibold">
+          <span className="inline-block w-2 h-2 rounded-full bg-bearish-bright"></span>
+          ▼ SHORT
+        </span>
+        <span className="text-border-subtle">|</span>
+        <span className="flex items-center gap-1 text-text-muted">
+          <span>EXIT (TP/SL)</span>
+        </span>
+        {activeMarkersCount > 0 && (
+          <span className="ml-1 px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-400 font-bold border border-brand-500/30 text-[10px]">
+            {activeMarkersCount} markers
+          </span>
+        )}
+      </div>
+
       <div ref={chartContainerRef} className="flex-1 w-full" />
     </div>
   );

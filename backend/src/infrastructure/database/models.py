@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from uuid import uuid4
@@ -27,7 +27,9 @@ class StrategyDefinitionModel(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     name = Column(String, index=True, nullable=False)
-    type = Column(String, nullable=False) # e.g., "single", "composite"
+    type = Column(String, nullable=False) # e.g., "single", "composite", "ai_generated"
+    description = Column(Text, nullable=True)
+    source_prompt = Column(Text, nullable=True) # Natural language prompt or web source
     params_json = Column(JSON, nullable=False)
     version = Column(String, default="1.0.0")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -58,10 +60,17 @@ class TradeRecordModel(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     backtest_result_id = Column(String, ForeignKey("backtest_results.id"), nullable=False)
+    symbol = Column(String, nullable=True)
     entry_time = Column(DateTime, nullable=False)
     entry_price = Column(Float, nullable=False)
     exit_time = Column(DateTime, nullable=False)
     exit_price = Column(Float, nullable=False)
+    volume_usd = Column(Float, nullable=True, default=100.0)
+    stop_loss = Column(Float, nullable=True)
+    take_profit = Column(Float, nullable=True)
+    fee = Column(Float, nullable=True, default=0.0)
+    slippage = Column(Float, nullable=True, default=0.0)
+    profit_usd = Column(Float, nullable=True, default=0.0)
     profit_pct = Column(Float, nullable=False)
     trade_type = Column(String, nullable=False) # "LONG" or "SHORT"
 
@@ -82,12 +91,24 @@ class NewsItemModel(Base):
     sentiment_label = Column(String, nullable=True) # e.g., "positive", "neutral", "negative"
 
 
+class CrawlerTagSchemaModel(Base):
+    __tablename__ = "crawler_tag_schemas"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    domain = Column(String, index=True, nullable=False)
+    title_selector = Column(String, nullable=False)
+    content_selector = Column(String, nullable=False)
+    date_selector = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class LeaderboardEntryModel(Base):
     __tablename__ = "leaderboard_entries"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     backtest_result_id = Column(String, ForeignKey("backtest_results.id"), unique=True, nullable=False)
-    rank = Column(Integer, nullable=True) # Rank might be dynamically calculated, or stored if materialized
+    rank = Column(Integer, nullable=True)
     score = Column(Float, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
