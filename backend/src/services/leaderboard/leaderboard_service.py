@@ -166,3 +166,7 @@ class LeaderboardService:
             entries.sort(key=lambda x: x.timestamp, reverse=reverse)
             
         return entries
+
+# Global singleton instance
+leaderboard_service = LeaderboardService()
+

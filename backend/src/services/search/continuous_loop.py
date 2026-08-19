@@ -84,12 +84,23 @@ class ContinuousSearchLoop:
         workers = []
             
         try:
-            df = self.adapter.fetch_ohlcv(symbol, timeframe, limit)
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # We create a task or run via thread if loop is running
+                    df = asyncio.run(self.adapter.fetch_ohlcv(symbol, timeframe, limit))
+                else:
+                    df = loop.run_until_complete(self.adapter.fetch_ohlcv(symbol, timeframe, limit))
+            except RuntimeError:
+                df = asyncio.run(self.adapter.fetch_ohlcv(symbol, timeframe, limit))
+
             if df.empty:
                 with self.lock:
                     self.state.status = "error"
                     self.state.error = "Could not fetch market data."
                 return
+
                 
             # Start workers
             for _ in range(num_workers):

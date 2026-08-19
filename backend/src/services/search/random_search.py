@@ -1,4 +1,5 @@
 import math
+import asyncio
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field, asdict
@@ -66,12 +67,6 @@ class RandomSearch:
     """
     Generates random strategy candidates, backtests each one, and ranks
     the results by a weighted overall score.
-
-    Score formula (all components normalised to roughly [0, 1]):
-        overall = 0.4 * norm_return
-                + 0.3 * winrate
-                + 0.2 * (1 + max_drawdown)   # mdd is negative, so 1+mdd ∈ [0,1]
-                + 0.1 * norm_sharpe
     """
 
     def __init__(self, registry: StrategyRegistry, adapter: BinanceAdapter):
@@ -85,7 +80,7 @@ class RandomSearch:
     #  Public API
     # ------------------------------------------------------------------ #
 
-    def search(
+    async def async_search(
         self,
         symbol: str = "BTC/USDT",
         timeframe: str = "1h",
@@ -93,14 +88,14 @@ class RandomSearch:
         n_candidates: int = 100,
         top_k: int = 10,
     ) -> List[SearchResult]:
-        """Run a full random search.  Updates *self.state* in-place."""
+        """Run a full random search asynchronously. Updates *self.state* in-place."""
         import time
         self._stop_flag = False
         self.state = SearchState(status="running", total=n_candidates, top_k=top_k, start_time=time.time())
 
         try:
-            # 1. Fetch market data once
-            df = self.adapter.fetch_ohlcv(symbol, timeframe, limit)
+            # 1. Fetch market data asynchronously
+            df = await self.adapter.fetch_ohlcv(symbol, timeframe, limit)
             if df.empty:
                 self.state.status = "error"
                 self.state.error = "Could not fetch market data."
@@ -137,9 +132,29 @@ class RandomSearch:
             self.state.error = str(e)
             return []
 
+    def search(
+        self,
+        symbol: str = "BTC/USDT",
+        timeframe: str = "1h",
+        limit: int = 2000,
+        n_candidates: int = 100,
+        top_k: int = 10,
+    ) -> List[SearchResult]:
+        """Synchronous wrapper for search execution."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.async_search(symbol, timeframe, limit, n_candidates, top_k))
+                return self.state.results
+            else:
+                return loop.run_until_complete(self.async_search(symbol, timeframe, limit, n_candidates, top_k))
+        except RuntimeError:
+            return asyncio.run(self.async_search(symbol, timeframe, limit, n_candidates, top_k))
+
     def stop(self):
         """Signal the running search to stop after the current iteration."""
         self._stop_flag = True
+
 
     # ------------------------------------------------------------------ #
     #  Internal helpers

@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException
+import asyncio
+import logging
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -18,21 +20,37 @@ from src.api.v1.sentiment_router import router as sentiment_router
 from src.api.websockets.events_ws import router as events_ws_router
 
 from src.infrastructure.database.config import engine, Base
-# Import models so they are registered with Base before create_all
 import src.infrastructure.database.models 
 from src.infrastructure.message_broker.event_bus import event_bus
 from src.infrastructure.message_broker.events import EventType
+
+logger = logging.getLogger(__name__)
+
+# Singletons & dependency injection providers
+registry = StrategyRegistry()
+binance_adapter = BinanceAdapter()
+
+def get_strategy_registry() -> StrategyRegistry:
+    return registry
+
+def get_binance_adapter() -> BinanceAdapter:
+    return binance_adapter
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create database tables
     Base.metadata.create_all(bind=engine)
     
+    # Initialize Redis EventBus if available
+    await event_bus.init_redis()
+    
     # Wire up EventBus subscriptions
     event_bus.subscribe(EventType.BACKTEST_COMPLETED, leaderboard_service.handle_backtest_completed)
     
     yield
-    # Cleanup if needed
+    
+    # Cleanup on shutdown
+    await binance_adapter.close()
 
 app = FastAPI(
     title="Crypto Strategy Lab API",
@@ -49,10 +67,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize singletons
-registry = StrategyRegistry()
-binance_adapter = BinanceAdapter()
-
 # Include routers
 app.include_router(search_router)
 app.include_router(leaderboard_router)
@@ -61,6 +75,7 @@ app.include_router(news_router)
 app.include_router(sentiment_router)
 app.include_router(events_ws_router)
 
+# Request / Response Pydantic Models
 class StrategyConfig(BaseModel):
     id: str
     params: Dict[str, Any] = {}
@@ -75,42 +90,70 @@ class BacktestRequest(BaseModel):
     stop_loss_pct: Optional[float] = None
     trailing_stop_pct: Optional[float] = None
 
+class OHLCVResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    data: List[Dict[str, Any]]
+
+class BacktestResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    metrics: Dict[str, Any]
+
+class BacktestWithTradesResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    metrics: Dict[str, Any]
+    trades: List[Dict[str, Any]]
+    markers: List[Dict[str, Any]]
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to Crypto Strategy Lab API"}
 
 @app.get("/api/v1/strategies")
-async def get_strategies():
+async def get_strategies(reg: StrategyRegistry = Depends(get_strategy_registry)):
     """Returns a list of all available strategies and their metadata"""
-    return {"strategies": registry.get_all_strategies()}
+    return {"strategies": reg.get_all_strategies()}
 
-@app.get("/api/v1/market/ohlcv")
-async def get_ohlcv(symbol: str = "BTC/USDT", timeframe: str = "1h", limit: int = 100):
+@app.get("/api/v1/market/ohlcv", response_model=OHLCVResponse)
+async def get_ohlcv(
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    limit: int = 100,
+    adapter: BinanceAdapter = Depends(get_binance_adapter)
+):
     """
-    Fetches OHLCV data from Binance.
+    Fetches OHLCV data asynchronously from Binance.
     """
     try:
-        df = binance_adapter.fetch_ohlcv(symbol, timeframe, limit)
-        # Reset index to include timestamp in output
+        df = await adapter.fetch_ohlcv(symbol, timeframe, limit)
+        if df.empty:
+            return OHLCVResponse(symbol=symbol, timeframe=timeframe, data=[])
+            
         df_reset = df.reset_index()
-        # Convert datetime to string for JSON serialization
         df_reset['timestamp'] = df_reset['timestamp'].astype(str)
         data = df_reset.to_dict(orient='records')
-        return {"symbol": symbol, "timeframe": timeframe, "data": data}
+        return OHLCVResponse(symbol=symbol, timeframe=timeframe, data=data)
     except Exception as e:
-        return {"error": str(e)}
+        logger.exception(f"Error fetching OHLCV for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/api/v1/backtest/run")
-async def run_backtest(request: BacktestRequest):
+@app.post("/api/v1/backtest/run", response_model=BacktestResponse)
+async def run_backtest(
+    request: BacktestRequest,
+    adapter: BinanceAdapter = Depends(get_binance_adapter),
+    reg: StrategyRegistry = Depends(get_strategy_registry)
+):
     """
-    Runs a backtest with the provided strategies and logic.
+    Runs a backtest with the provided strategies and logic asynchronously.
     """
     if not request.strategies:
         raise HTTPException(status_code=400, detail="At least one strategy must be provided.")
         
     try:
-        # 1. Fetch market data
-        df = binance_adapter.fetch_ohlcv(request.symbol, request.timeframe, request.limit)
+        # 1. Fetch market data asynchronously
+        df = await adapter.fetch_ohlcv(request.symbol, request.timeframe, request.limit)
         if df.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data.")
             
@@ -119,20 +162,17 @@ async def run_backtest(request: BacktestRequest):
         composite_params = {}
         for sc in request.strategies:
             try:
-                instance = registry.get_strategy(sc.id)
+                instance = reg.get_strategy(sc.id)
             except ValueError:
                 raise HTTPException(status_code=404, detail=f"Strategy '{sc.id}' not found.")
             strategy_instances.append(instance)
-            # Override params if provided
             composite_params[instance.id] = {**instance.default_params, **sc.params}
             
-        # 3. Generate Signals
+        # 3. Generate Signals in background thread pool
         if len(strategy_instances) == 1:
-            # Single strategy
             instance = strategy_instances[0]
-            signals = instance.generate_signals(df, composite_params[instance.id])
+            signals = await asyncio.to_thread(instance.generate_signals, df, composite_params[instance.id])
         else:
-            # Composite strategy
             weights = None
             if request.logic == "WEIGHTED":
                 raw_weights = [float(sc.params.get("weight", 1.0)) for sc in request.strategies]
@@ -140,16 +180,13 @@ async def run_backtest(request: BacktestRequest):
                 weights = [w / total_weight for w in raw_weights] if total_weight > 0 else None
                 
             composite = CompositeStrategy(strategy_instances, logic=request.logic, weights=weights)
-            signals = composite.generate_signals(df, composite_params)
+            signals = await asyncio.to_thread(composite.generate_signals, df, composite_params)
             
-        # 4. Evaluate
-        metrics = BacktestEvaluator.evaluate(df, signals)
+        # 4. Evaluate in thread pool
+        metrics = await asyncio.to_thread(BacktestEvaluator.evaluate, df, signals)
         
         # 5. Push event
-        if len(strategy_instances) == 1:
-            strat_name = strategy_instances[0].name
-        else:
-            strat_name = composite.name
+        strat_name = strategy_instances[0].name if len(strategy_instances) == 1 else composite.name
             
         event_bus.publish(
             EventType.BACKTEST_COMPLETED,
@@ -160,29 +197,33 @@ async def run_backtest(request: BacktestRequest):
             }
         )
         
-        return {
-            "symbol": request.symbol,
-            "timeframe": request.timeframe,
-            "metrics": metrics
-        }
+        return BacktestResponse(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            metrics=metrics
+        )
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Backtest error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Backtest error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/api/v1/backtest/run-with-trades")
-async def run_backtest_with_trades(request: BacktestRequest):
+@app.post("/api/v1/backtest/run-with-trades", response_model=BacktestWithTradesResponse)
+async def run_backtest_with_trades(
+    request: BacktestRequest,
+    adapter: BinanceAdapter = Depends(get_binance_adapter),
+    reg: StrategyRegistry = Depends(get_strategy_registry)
+):
     """
-    Runs a backtest and returns metrics along with detailed trade lists and chart markers.
+    Runs a backtest and returns metrics along with detailed trade lists and chart markers asynchronously.
     """
     if not request.strategies:
         raise HTTPException(status_code=400, detail="At least one strategy must be provided.")
         
     try:
-        # 1. Fetch market data
-        df = binance_adapter.fetch_ohlcv(request.symbol, request.timeframe, request.limit)
+        # 1. Fetch market data asynchronously
+        df = await adapter.fetch_ohlcv(request.symbol, request.timeframe, request.limit)
         if df.empty:
             raise HTTPException(status_code=400, detail="Could not fetch market data.")
             
@@ -191,20 +232,17 @@ async def run_backtest_with_trades(request: BacktestRequest):
         composite_params = {}
         for sc in request.strategies:
             try:
-                instance = registry.get_strategy(sc.id)
+                instance = reg.get_strategy(sc.id)
             except ValueError:
                 raise HTTPException(status_code=404, detail=f"Strategy '{sc.id}' not found.")
             strategy_instances.append(instance)
-            # Override params if provided
             composite_params[instance.id] = {**instance.default_params, **sc.params}
             
-        # 3. Generate Signals
+        # 3. Generate Signals in background thread pool
         if len(strategy_instances) == 1:
-            # Single strategy
             instance = strategy_instances[0]
-            signals = instance.generate_signals(df, composite_params[instance.id])
+            signals = await asyncio.to_thread(instance.generate_signals, df, composite_params[instance.id])
         else:
-            # Composite strategy
             weights = None
             if request.logic == "WEIGHTED":
                 raw_weights = [float(sc.params.get("weight", 1.0)) for sc in request.strategies]
@@ -212,16 +250,17 @@ async def run_backtest_with_trades(request: BacktestRequest):
                 weights = [w / total_weight for w in raw_weights] if total_weight > 0 else None
                 
             composite = CompositeStrategy(strategy_instances, logic=request.logic, weights=weights)
-            signals = composite.generate_signals(df, composite_params)
+            signals = await asyncio.to_thread(composite.generate_signals, df, composite_params)
             
-        # 4. Evaluate metrics and extract trades
-        metrics = BacktestEvaluator.evaluate(df, signals)
+        # 4. Evaluate metrics and extract trades in thread pool
+        metrics = await asyncio.to_thread(BacktestEvaluator.evaluate, df, signals)
         
-        raw_trades = TradeSimulator.simulate(
+        raw_trades = await asyncio.to_thread(
+            TradeSimulator.simulate,
             df, signals, 
-            tp_pct=request.take_profit_pct, 
-            sl_pct=request.stop_loss_pct, 
-            trailing_pct=request.trailing_stop_pct
+            request.take_profit_pct, 
+            request.stop_loss_pct, 
+            request.trailing_stop_pct
         )
         trades = []
         for t in raw_trades:
@@ -230,13 +269,10 @@ async def run_backtest_with_trades(request: BacktestRequest):
             td['id'] = str(td.pop('trade_id'))
             trades.append(td)
             
-        markers = BacktestEvaluator.extract_markers(df, signals)
+        markers = await asyncio.to_thread(BacktestEvaluator.extract_markers, df, signals)
         
-        # 5. Push event (optional, keeping it consistent with original)
-        if len(strategy_instances) == 1:
-            strat_name = strategy_instances[0].name
-        else:
-            strat_name = composite.name
+        # 5. Push event
+        strat_name = strategy_instances[0].name if len(strategy_instances) == 1 else composite.name
             
         event_bus.publish(
             EventType.BACKTEST_COMPLETED,
@@ -247,16 +283,17 @@ async def run_backtest_with_trades(request: BacktestRequest):
             }
         )
         
-        return {
-            "symbol": request.symbol,
-            "timeframe": request.timeframe,
-            "metrics": metrics,
-            "trades": trades,
-            "markers": markers
-        }
+        return BacktestWithTradesResponse(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            metrics=metrics,
+            trades=trades,
+            markers=markers
+        )
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Backtest error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Backtest error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+

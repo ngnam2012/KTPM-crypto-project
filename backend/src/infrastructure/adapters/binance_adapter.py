@@ -1,18 +1,21 @@
-import ccxt
+import ccxt.async_support as ccxt
 import pandas as pd
+import logging
 from src.infrastructure.adapters.base_exchange import IExchangeAdapter
+
+logger = logging.getLogger(__name__)
 
 class BinanceAdapter(IExchangeAdapter):
     def __init__(self):
-        # Initialize CCXT Binance instance
+        # Initialize CCXT async Binance instance
         self.exchange = ccxt.binance({
             'enableRateLimit': True,
         })
         
-    def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
+    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
         try:
-            # Fetch raw data from Binance
-            raw_data = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            # Fetch raw data from Binance asynchronously
+            raw_data = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             
             if not raw_data:
                 return pd.DataFrame()
@@ -32,5 +35,9 @@ class BinanceAdapter(IExchangeAdapter):
             
             return df
         except Exception as e:
-            print(f"Error fetching data from Binance for {symbol}: {e}")
+            logger.exception(f"Error fetching data from Binance for {symbol}: {e}")
             raise e
+
+    async def close(self):
+        await self.exchange.close()
+

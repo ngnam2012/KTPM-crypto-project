@@ -7,9 +7,9 @@ class IExchangeAdapter(ABC):
     """
     
     @abstractmethod
-    def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
+    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
         """
-        Fetches OHLCV (Open, High, Low, Close, Volume) data.
+        Fetches OHLCV (Open, High, Low, Close, Volume) data asynchronously.
         
         :param symbol: Trading pair symbol (e.g., 'BTC/USDT')
         :param timeframe: Timeframe (e.g., '1m', '1h', '1d')
@@ -17,3 +17,4 @@ class IExchangeAdapter(ABC):
         :return: pandas DataFrame with DatetimeIndex and columns: open, high, low, close, volume
         """
         pass
+

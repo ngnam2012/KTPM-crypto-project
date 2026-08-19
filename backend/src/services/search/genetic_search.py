@@ -1,6 +1,7 @@
 import random
 import math
 import copy
+import asyncio
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
@@ -21,7 +22,7 @@ class GeneticSearch(RandomSearch):
         super().__init__(registry, adapter)
         # self.generator is already initialized in super()
         
-    def search(
+    async def async_search(
         self,
         symbol: str = "BTC/USDT",
         timeframe: str = "1h",
@@ -31,19 +32,20 @@ class GeneticSearch(RandomSearch):
         mutation_rate: float = 0.1,
         top_k: int = 10,
     ) -> List[SearchResult]:
-        """Run Genetic Algorithm search."""
+        """Run Genetic Algorithm search asynchronously."""
         import time
         self._stop_flag = False
         total_evaluations = population_size * generations
         self.state = SearchState(status="running", total=total_evaluations, top_k=top_k, start_time=time.time())
 
         try:
-            # 1. Fetch market data
-            df = self.adapter.fetch_ohlcv(symbol, timeframe, limit)
+            # 1. Fetch market data asynchronously
+            df = await self.adapter.fetch_ohlcv(symbol, timeframe, limit)
             if df.empty:
                 self.state.status = "error"
                 self.state.error = "Could not fetch market data."
                 return []
+
 
             # 2. Initialize Population
             population = self.generator.generate_candidates(population_size)
@@ -113,6 +115,28 @@ class GeneticSearch(RandomSearch):
             self.state.status = "error"
             self.state.error = str(e)
             return []
+
+    def search(
+        self,
+        symbol: str = "BTC/USDT",
+        timeframe: str = "1h",
+        limit: int = 2000,
+        population_size: int = 20,
+        generations: int = 5,
+        mutation_rate: float = 0.1,
+        top_k: int = 10,
+    ) -> List[SearchResult]:
+        """Synchronous wrapper for GeneticSearch execution."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.async_search(symbol, timeframe, limit, population_size, generations, mutation_rate, top_k))
+                return self.state.results
+            else:
+                return loop.run_until_complete(self.async_search(symbol, timeframe, limit, population_size, generations, mutation_rate, top_k))
+        except RuntimeError:
+            return asyncio.run(self.async_search(symbol, timeframe, limit, population_size, generations, mutation_rate, top_k))
+
 
     def _tournament_selection(self, population: List[SearchResult], k: int = 3) -> SearchResult:
         """Select the best candidate out of k random candidates."""
