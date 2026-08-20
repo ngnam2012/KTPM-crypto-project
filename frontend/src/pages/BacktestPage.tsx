@@ -107,12 +107,22 @@ export const BacktestPage: React.FC = () => {
     );
   };
 
+  const formatToDateTimeLocal = (d: Date): string => {
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const MM = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const mm = pad(d.getMinutes());
+    return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
+  };
+
   const setDatePreset = (days: number) => {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - days);
-    setEndDate(end.toISOString().split('T')[0]);
-    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(formatToDateTimeLocal(end));
+    setStartDate(formatToDateTimeLocal(start));
   };
 
   const handleRunBacktest = async () => {
@@ -389,33 +399,70 @@ export const BacktestPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Date Range (From - To) */}
+          {/* Date Range (From - To) with Date and Time Picker */}
           <div className="lg:col-span-2">
             <label className="text-xs font-semibold text-text-muted mb-1.5 flex items-center justify-between">
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1.5">
                 <Calendar size={14} className="text-brand-400" />
-                <span>5. Date Range (From - To)</span>
+                <span>5. Date & Time Range (From - To)</span>
               </span>
-              <span className="flex gap-1 font-mono">
-                <button onClick={() => setDatePreset(7)} className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400">7D</button>
-                <button onClick={() => setDatePreset(30)} className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400">30D</button>
-                <button onClick={() => setDatePreset(90)} className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400">90D</button>
-                <button onClick={() => { setStartDate(''); setEndDate(''); }} className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400">ALL</button>
+              <span className="flex items-center gap-1 font-mono">
+                <button 
+                  onClick={() => setDatePreset(1)} 
+                  className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400 border border-border-subtle/40 transition-colors"
+                  title="Last 24 Hours"
+                >
+                  24H
+                </button>
+                <button 
+                  onClick={() => setDatePreset(7)} 
+                  className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400 border border-border-subtle/40 transition-colors"
+                  title="Last 7 Days"
+                >
+                  7D
+                </button>
+                <button 
+                  onClick={() => setDatePreset(30)} 
+                  className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400 border border-border-subtle/40 transition-colors"
+                  title="Last 30 Days"
+                >
+                  30D
+                </button>
+                <button 
+                  onClick={() => setDatePreset(90)} 
+                  className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400 border border-border-subtle/40 transition-colors"
+                  title="Last 90 Days"
+                >
+                  90D
+                </button>
+                <button 
+                  onClick={() => { setStartDate(''); setEndDate(''); }} 
+                  className="text-[10px] px-1.5 py-0.5 bg-bg-deep rounded hover:text-brand-400 border border-border-subtle/40 transition-colors"
+                  title="Fetch all available historical candles"
+                >
+                  ALL
+                </button>
               </span>
             </label>
-            <div className="flex gap-2">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-1/2 bg-bg-deep border border-border-subtle text-text-main text-xs rounded-xl p-2.5 outline-none focus:border-brand-400"
-              />
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-1/2 bg-bg-deep border border-border-subtle text-text-main text-xs rounded-xl p-2.5 outline-none focus:border-brand-400"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="relative">
+                <input
+                  type="datetime-local"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full bg-bg-deep border border-border-subtle text-text-main text-xs font-mono rounded-xl p-2.5 outline-none focus:border-brand-400 transition-colors"
+                  title="From Date & Time"
+                />
+              </div>
+              <div className="relative">
+                <input
+                  type="datetime-local"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full bg-bg-deep border border-border-subtle text-text-main text-xs font-mono rounded-xl p-2.5 outline-none focus:border-brand-400 transition-colors"
+                  title="To Date & Time"
+                />
+              </div>
             </div>
           </div>
         </div>

@@ -8,15 +8,39 @@ import {
   Trophy, 
   ExternalLink, 
   Radio, 
-  Sparkles, 
-  TrendingUp, 
-  ShieldCheck,
+  Layers, 
   Zap
 } from 'lucide-react';
 import { getDeviceTimezoneOffset } from '../shared/lib/timezone';
 
 export const Dashboard: React.FC = () => {
   const [globalSymbol, setGlobalSymbol] = useState("BTC/USDT");
+  const [presetMode, setPresetMode] = useState<'scalp' | 'standard' | 'macro'>('scalp');
+
+  const [tf1, setTf1] = useState("1m");
+  const [tf2, setTf2] = useState("5m");
+  const [tf3, setTf3] = useState("15m");
+  const [tf4, setTf4] = useState("1h");
+
+  const handlePresetChange = (mode: 'scalp' | 'standard' | 'macro') => {
+    setPresetMode(mode);
+    if (mode === 'scalp') {
+      setTf1("1m");
+      setTf2("5m");
+      setTf3("15m");
+      setTf4("1h");
+    } else if (mode === 'standard') {
+      setTf1("5m");
+      setTf2("15m");
+      setTf3("1h");
+      setTf4("4h");
+    } else {
+      setTf1("15m");
+      setTf2("1h");
+      setTf3("4h");
+      setTf4("1d");
+    }
+  };
 
   const symbols = [
     { label: "Bitcoin", value: "BTC/USDT", ticker: "BTC" },
@@ -43,15 +67,16 @@ export const Dashboard: React.FC = () => {
                 </span>
               </h1>
               <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-                Simultaneously monitor 4 independent timeframes (15m, 1h, 4h, 1d) with ultra-low latency Binance WebSocket multiplexer.
+                Simultaneously monitor 4 independent timeframes with live MA(20), Volume, and technical LONG / SHORT / EXIT signals.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Global Symbol & Quick Action */}
-        <div className="flex items-center gap-3 w-full xl:w-auto shrink-0">
-          <div className="flex items-center gap-1.5 bg-bg-deep border border-border-subtle rounded-xl p-1.5 flex-1 lg:flex-none">
+        {/* Global Symbol, Timeframe Preset & Quick Action */}
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto shrink-0">
+          {/* Symbol Selectors */}
+          <div className="flex items-center gap-1 bg-bg-deep border border-border-subtle rounded-xl p-1 shrink-0">
             {symbols.map(s => (
               <button
                 key={s.value}
@@ -67,12 +92,43 @@ export const Dashboard: React.FC = () => {
             ))}
           </div>
 
+          {/* Timeframe Preset Mode */}
+          <div className="flex items-center gap-1 bg-bg-deep border border-border-subtle rounded-xl p-1 shrink-0 text-xs font-bold">
+            <button
+              onClick={() => handlePresetChange('scalp')}
+              className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                presetMode === 'scalp' ? 'bg-brand-500/20 text-brand-400 border border-brand-500/40' : 'text-text-muted hover:text-text-main'
+              }`}
+              title="1m, 5m, 15m, 1h"
+            >
+              Scalp (1m - 1h)
+            </button>
+            <button
+              onClick={() => handlePresetChange('standard')}
+              className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                presetMode === 'standard' ? 'bg-brand-500/20 text-brand-400 border border-brand-500/40' : 'text-text-muted hover:text-text-main'
+              }`}
+              title="5m, 15m, 1h, 4h"
+            >
+              Standard (5m - 4h)
+            </button>
+            <button
+              onClick={() => handlePresetChange('macro')}
+              className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                presetMode === 'macro' ? 'bg-brand-500/20 text-brand-400 border border-brand-500/40' : 'text-text-muted hover:text-text-main'
+              }`}
+              title="15m, 1h, 4h, 1d"
+            >
+              Macro (15m - 1d)
+            </button>
+          </div>
+
           <Link
             to="/backtest"
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-bg-deep font-bold rounded-xl text-xs transition-all duration-300 shadow-md shadow-brand-500/20 hover:scale-[1.02]"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-bg-deep font-bold rounded-xl text-xs transition-all duration-300 shadow-md shadow-brand-500/20 hover:scale-[1.02] shrink-0"
           >
-            <FlaskConical size={16} />
-            <span>Launch Backtest Lab</span>
+            <FlaskConical size={15} />
+            <span>Launch Backtest</span>
           </Link>
         </div>
       </div>
@@ -130,67 +186,31 @@ export const Dashboard: React.FC = () => {
 
       {/* 4 Multi-Timeframe Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
-        {/* Chart 1: 15m */}
-        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
-          <div className="flex justify-between items-center mb-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded bg-brand-500/10 text-brand-400 font-mono">15m (Scalp / Intraday)</span>
-            </div>
-            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
-            </span>
-          </div>
+        {/* Chart 1 */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart symbol={globalSymbol} initialTimeframe="15m" />
+            <TradingChart key={`${globalSymbol}-${tf1}`} symbol={globalSymbol} initialTimeframe={tf1} autoSignals={true} />
           </div>
         </div>
 
-        {/* Chart 2: 1h */}
-        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
-          <div className="flex justify-between items-center mb-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded bg-accent-purple/10 text-accent-purple font-mono">1h (Hourly Standard)</span>
-            </div>
-            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
-            </span>
-          </div>
+        {/* Chart 2 */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart symbol={globalSymbol} initialTimeframe="1h" />
+            <TradingChart key={`${globalSymbol}-${tf2}`} symbol={globalSymbol} initialTimeframe={tf2} autoSignals={true} />
           </div>
         </div>
 
-        {/* Chart 3: 4h */}
-        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
-          <div className="flex justify-between items-center mb-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded bg-accent-blue/10 text-accent-blue font-mono">4h (Swing Trend)</span>
-            </div>
-            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
-            </span>
-          </div>
+        {/* Chart 3 */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart symbol={globalSymbol} initialTimeframe="4h" />
+            <TradingChart key={`${globalSymbol}-${tf3}`} symbol={globalSymbol} initialTimeframe={tf3} autoSignals={true} />
           </div>
         </div>
 
-        {/* Chart 4: 1d */}
-        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-4 backdrop-blur-md shadow-md h-[450px] flex flex-col">
-          <div className="flex justify-between items-center mb-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-text-main">{globalSymbol}</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded bg-accent-cyan/10 text-accent-cyan font-mono">1d (Macro Daily)</span>
-            </div>
-            <span className="text-[11px] text-text-muted font-mono flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-bullish-bright animate-ping"></span> Realtime Feed
-            </span>
-          </div>
+        {/* Chart 4 */}
+        <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart symbol={globalSymbol} initialTimeframe="1d" />
+            <TradingChart key={`${globalSymbol}-${tf4}`} symbol={globalSymbol} initialTimeframe={tf4} autoSignals={true} />
           </div>
         </div>
       </div>

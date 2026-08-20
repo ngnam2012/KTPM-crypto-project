@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, JSON, Text, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from uuid import uuid4
@@ -7,6 +7,24 @@ from src.infrastructure.database.config import Base
 
 def generate_uuid():
     return str(uuid4())
+
+class UserModel(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    role = Column(String, default="trader", nullable=False) # "trader", "analyst", "admin"
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    strategies = relationship("StrategyDefinitionModel", back_populates="user")
+    backtests = relationship("BacktestResultModel", back_populates="user")
+
 
 class CandleModel(Base):
     __tablename__ = "candles"
@@ -26,6 +44,7 @@ class StrategyDefinitionModel(Base):
     __tablename__ = "strategy_definitions"
 
     id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     name = Column(String, index=True, nullable=False)
     type = Column(String, nullable=False) # e.g., "single", "composite", "ai_generated"
     description = Column(Text, nullable=True)
@@ -35,6 +54,7 @@ class StrategyDefinitionModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
+    user = relationship("UserModel", back_populates="strategies")
     backtests = relationship("BacktestResultModel", back_populates="strategy_definition")
 
 
@@ -42,6 +62,7 @@ class BacktestResultModel(Base):
     __tablename__ = "backtest_results"
 
     id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     strategy_definition_id = Column(String, ForeignKey("strategy_definitions.id"), nullable=False)
     symbol = Column(String, index=True, nullable=False)
     timeframe = Column(String, index=True, nullable=False)
@@ -50,6 +71,7 @@ class BacktestResultModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
+    user = relationship("UserModel", back_populates="backtests")
     strategy_definition = relationship("StrategyDefinitionModel", back_populates="backtests")
     trades = relationship("TradeRecordModel", back_populates="backtest_result", cascade="all, delete-orphan")
     leaderboard_entry = relationship("LeaderboardEntryModel", back_populates="backtest_result", uselist=False, cascade="all, delete-orphan")

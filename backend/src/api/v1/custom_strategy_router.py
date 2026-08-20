@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from src.services.ai.strategy_parser import AIStrategyParser
 from src.services.crawler.smart_crawler import SmartCrawler
 from src.infrastructure.database.config import get_db
-from src.infrastructure.database.models import StrategyDefinitionModel, CrawlerTagSchemaModel
+from src.infrastructure.database.models import StrategyDefinitionModel, CrawlerTagSchemaModel, UserModel
+from src.api.v1.auth_router import get_optional_user
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +66,19 @@ async def generate_strategy_from_prompt(request: PromptStrategyRequest):
         raise HTTPException(status_code=500, detail="Failed to parse strategy from prompt.")
 
 @router.post("/save")
-async def save_custom_strategy(request: StrategySaveRequest, db: Session = Depends(get_db)):
+async def save_custom_strategy(
+    request: StrategySaveRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_optional_user)
+):
     """
-    Saves a customized or validated strategy into Strategy Library in database.
+    Saves a customized or validated strategy into Strategy Library in database, optionally tagged with current user.
     """
     try:
         db_id = str(uuid4())
         record = StrategyDefinitionModel(
             id=db_id,
+            user_id=current_user.id if current_user else None,
             name=request.name,
             type="custom",
             version=request.version,
@@ -83,7 +89,11 @@ async def save_custom_strategy(request: StrategySaveRequest, db: Session = Depen
         )
         db.add(record)
         db.commit()
-        return {"id": db_id, "message": f"Strategy '{request.name}' saved to library successfully!"}
+        return {
+            "id": db_id,
+            "message": f"Strategy '{request.name}' saved to library successfully!",
+            "author": current_user.username if current_user else "Public / Anonymous"
+        }
     except Exception as e:
         logger.exception(f"Error saving strategy: {e}")
         raise HTTPException(status_code=500, detail="Failed to save strategy to library.")
@@ -100,6 +110,8 @@ async def get_saved_strategies(db: Session = Depends(get_db)):
             params = r.params_json or {}
             results.append({
                 "id": r.id,
+                "user_id": r.user_id,
+                "author": r.user.username if r.user else "System / Built-in",
                 "name": r.name,
                 "type": r.type,
                 "version": r.version,
