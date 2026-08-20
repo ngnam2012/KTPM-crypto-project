@@ -2,6 +2,7 @@ from typing import Type, TypeVar, Generic, List, Optional, Any
 from sqlalchemy.orm import Session
 from src.infrastructure.database.config import Base
 from src.infrastructure.database.models import (
+    UserModel,
     CandleModel,
     BacktestResultModel,
     LeaderboardEntryModel,
@@ -42,6 +43,22 @@ class BaseRepository(Generic[ModelType]):
             db.commit()
             return True
         return False
+
+
+class UserRepository(BaseRepository[UserModel]):
+    def __init__(self):
+        super().__init__(UserModel)
+
+    def get_by_username(self, db: Session, username: str) -> Optional[UserModel]:
+        return db.query(self.model).filter(self.model.username == username).first()
+
+    def get_by_email(self, db: Session, email: str) -> Optional[UserModel]:
+        return db.query(self.model).filter(self.model.email == email).first()
+
+    def get_by_username_or_email(self, db: Session, identifier: str) -> Optional[UserModel]:
+        return db.query(self.model).filter(
+            (self.model.username == identifier) | (self.model.email == identifier)
+        ).first()
 
 
 class CandleRepository(BaseRepository[CandleModel]):

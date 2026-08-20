@@ -19,6 +19,7 @@ from src.api.v1.news_router import router as news_router
 from src.api.v1.sentiment_router import router as sentiment_router
 from src.api.websockets.events_ws import router as events_ws_router
 from src.api.v1.custom_strategy_router import router as custom_strategy_router
+from src.api.v1.auth_router import router as auth_router
 
 from src.infrastructure.database.config import engine, Base
 import src.infrastructure.database.models 
@@ -47,8 +48,10 @@ async def lifespan(app: FastAPI):
         import sqlalchemy
         with engine.connect() as conn:
             for query in [
+                "ALTER TABLE strategy_definitions ADD COLUMN user_id TEXT",
                 "ALTER TABLE strategy_definitions ADD COLUMN description TEXT",
                 "ALTER TABLE strategy_definitions ADD COLUMN source_prompt TEXT",
+                "ALTER TABLE backtest_results ADD COLUMN user_id TEXT",
                 "ALTER TABLE trade_records ADD COLUMN symbol TEXT",
                 "ALTER TABLE trade_records ADD COLUMN volume_usd FLOAT DEFAULT 100.0",
                 "ALTER TABLE trade_records ADD COLUMN stop_loss FLOAT",
@@ -92,6 +95,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(search_router)
 app.include_router(leaderboard_router)
 app.include_router(market_ws_router)

@@ -6,6 +6,9 @@ import { StrategyStudioPage } from './pages/StrategyStudioPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { NewsPage } from './pages/NewsPage';
 import { SearchPage } from './pages/SearchPage';
+import { AuthProvider, useAuth } from './shared/context/AuthContext';
+import { AuthModal } from './components/Auth/AuthModal';
+import { UserDropdown } from './components/Auth/UserDropdown';
 import { 
   Trophy, 
   LayoutDashboard, 
@@ -14,9 +17,10 @@ import {
   FlaskConical, 
   Sparkles, 
   Menu, 
-  X,
-  Clock,
-  Activity
+  X, 
+  Clock, 
+  Activity,
+  LogIn
 } from 'lucide-react';
 
 import { getDeviceTimezoneOffset } from './shared/lib/timezone';
@@ -58,6 +62,7 @@ const LiveClock = () => {
 const Navigation = () => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { isAuthenticated, openAuthModal } = useAuth();
   
   const navLinks = [
     { path: '/', label: 'Dashboard', fullLabel: 'Market Dashboard', icon: LayoutDashboard },
@@ -109,9 +114,10 @@ const Navigation = () => {
           })}
         </div>
 
-        {/* Right Info: Live Device Clock & Mobile Menu Toggle */}
+        {/* Right Info: Live Device Clock, Auth User Menu & Mobile Toggle */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <LiveClock />
+          <UserDropdown />
           <button 
             className="xl:hidden p-2 text-text-muted hover:text-text-main hover:bg-bg-surface rounded-xl transition-colors shrink-0"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -147,6 +153,30 @@ const Navigation = () => {
               </Link>
             );
           })}
+
+          {!isAuthenticated && (
+            <div className="pt-2 mt-2 border-t border-border-subtle flex gap-2">
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  openAuthModal('login');
+                }}
+                className="flex-1 py-2 rounded-xl bg-bg-surface text-xs font-bold text-text-main border border-border-subtle flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-4 h-4 text-brand-400" />
+                <span>Sign In</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  openAuthModal('register');
+                }}
+                className="flex-1 py-2 rounded-xl bg-brand-500 text-xs font-bold text-bg-deep flex items-center justify-center gap-2"
+              >
+                <span>Register</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </nav>
@@ -155,21 +185,25 @@ const Navigation = () => {
 
 function App() {
   return (
-    <Router>
-      <div className="min-h-screen bg-bg-deep text-text-main font-sans selection:bg-brand-500/30 flex flex-col">
-        <Navigation />
-        <main className="flex-1">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/backtest" element={<BacktestPage />} />
-            <Route path="/strategy-studio" element={<StrategyStudioPage />} />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/leaderboard" element={<LeaderboardPage />} />
-            <Route path="/news" element={<NewsPage />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <div className="min-h-screen bg-bg-deep text-text-main font-sans selection:bg-brand-500/30 flex flex-col">
+          <Navigation />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/backtest" element={<BacktestPage />} />
+              <Route path="/strategy-studio" element={<StrategyStudioPage />} />
+              <Route path="/search" element={<SearchPage />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
+              <Route path="/news" element={<NewsPage />} />
+            </Routes>
+          </main>
+          {/* Global Auth Modal */}
+          <AuthModal />
+        </div>
+      </Router>
+    </AuthProvider>
   );
 }
 

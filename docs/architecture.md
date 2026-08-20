@@ -130,6 +130,13 @@ graph TD
 - **Smart Crawler**: Crawl nội dung bài viết từ URL bất kỳ, tự động học và lưu cấu trúc HTML Tag (`h1`, `article p`, `time`, `og:title`) vào SQLite (`crawler_tag_schemas`).
 - **Sentiment Model**: Mô hình NLP FinBERT chấm điểm cảm xúc tin tức (-1.0 đến +1.0) và cấp tín hiệu cho `NewsSentimentStrategy`.
 
+### 3.7. Authentication & Security Layer (`backend/src/core/security.py`, `backend/src/api/v1/auth_router.py`)
+- **JSON Web Tokens (JWT)**: Xác thực phiên người dùng theo chuẩn RFC 7519 HMAC-SHA256, tự động gán hạn sử dụng 24h.
+- **Mã hóa mật khẩu an toàn**: Thuật toán PBKDF2-HMAC-SHA256 với muối ngẫu nhiên (salt 32 bytes) và 100.000 vòng lặp.
+- **Role-Based Access Control (RBAC)**: Phân quyền vai trò người dùng (`trader`, `analyst`, `admin`).
+- **FastAPI Auth Dependencies**: `get_current_user` và `get_optional_user` kiểm tra token tự động tại các endpoints.
+- **Frontend Auth Context & Interceptor**: Quản lý phiên `localStorage`, tự động gắn `Authorization: Bearer <token>` vào request header, hiển thị User Avatar & Modal Đăng nhập/Đăng ký.
+
 ---
 
 ## 4. Các Luồng Dữ Liệu Chính (Data Flows)
