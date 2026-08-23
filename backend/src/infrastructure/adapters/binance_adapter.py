@@ -9,7 +9,10 @@ logger = logging.getLogger(__name__)
 
 class BinanceAdapter(IExchangeAdapter):
     def __init__(self):
-        # Initialize CCXT async Binance instance
+        self._init_exchange()
+
+    def _init_exchange(self):
+        # Initialize or reinitialize CCXT async Binance instance
         self.exchange = ccxt.binance({
             'enableRateLimit': True,
         })
@@ -23,45 +26,65 @@ class BinanceAdapter(IExchangeAdapter):
         end_date: Optional[str] = None
     ) -> pd.DataFrame:
         try:
-            since_ms = None
-            if start_date:
-                try:
-                    dt = parse_date(start_date)
-                    since_ms = int(dt.timestamp() * 1000)
-                except Exception as e:
-                    logger.warning(f"Could not parse start_date {start_date}: {e}")
-
-            # Fetch raw data from Binance asynchronously
-            raw_data = await self.exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=limit)
-            
-            if not raw_data:
-                return pd.DataFrame()
-                
-            # Convert to pandas DataFrame
-            df = pd.DataFrame(raw_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            
-            # Convert timestamp from milliseconds to datetime
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            
-            # Set timestamp as index
-            df.set_index('timestamp', inplace=True)
-            
-            # Ensure float types for numeric columns
-            numeric_cols = ['open', 'high', 'low', 'close', 'volume']
-            df[numeric_cols] = df[numeric_cols].astype(float)
-
-            # Filter by end_date if provided
-            if end_date:
-                try:
-                    end_dt = parse_date(end_date)
-                    df = df[df.index <= end_dt]
-                except Exception as e:
-                    logger.warning(f"Could not parse end_date {end_date}: {e}")
-            
-            return df
+            return await self._fetch_ohlcv_internal(symbol, timeframe, limit, start_date, end_date)
+        except RuntimeError as re:
+            if "Event loop is closed" in str(re) or "no current event loop" in str(re):
+                logger.warning(f"Reinitializing Binance CCXT instance due to closed loop: {re}")
+                self._init_exchange()
+                return await self._fetch_ohlcv_internal(symbol, timeframe, limit, start_date, end_date)
+            raise re
         except Exception as e:
             logger.exception(f"Error fetching data from Binance for {symbol}: {e}")
             raise e
 
+    async def _fetch_ohlcv_internal(
+        self, 
+        symbol: str, 
+        timeframe: str, 
+        limit: int = 500,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> pd.DataFrame:
+        since_ms = None
+        if start_date:
+            try:
+                dt = parse_date(start_date)
+                since_ms = int(dt.timestamp() * 1000)
+            except Exception as e:
+                logger.warning(f"Could not parse start_date {start_date}: {e}")
+
+        # Fetch raw data from Binance asynchronously
+        raw_data = await self.exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=limit)
+        
+        if not raw_data:
+            return pd.DataFrame()
+            
+        # Convert to pandas DataFrame
+        df = pd.DataFrame(raw_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        
+        # Convert timestamp from milliseconds to datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        
+        # Set timestamp as index
+        df.set_index('timestamp', inplace=True)
+        
+        # Ensure float types for numeric columns
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        df[numeric_cols] = df[numeric_cols].astype(float)
+
+        # Filter by end_date if provided
+        if end_date:
+            try:
+                end_dt = parse_date(end_date)
+                df = df[df.index <= end_dt]
+            except Exception as e:
+                logger.warning(f"Could not parse end_date {end_date}: {e}")
+        
+        return df
+
     async def close(self):
-        await self.exchange.close()
+        if self.exchange:
+            try:
+                await self.exchange.close()
+            except Exception:
+                pass

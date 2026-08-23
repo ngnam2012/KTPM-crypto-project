@@ -51,6 +51,33 @@
     min-height: 100vh;
   }
 
+  /* Fix HTML5 date/datetime-local/time picker icons on dark theme */
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"] {
+    color-scheme: dark;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 1 !important;
+    width: 20px;
+    height: 20px;
+    margin-right: 4px;
+    /* Vibrant Gold #FACC15 matching the header calendar icon */
+    filter: brightness(0) saturate(100%) invert(88%) sepia(61%) saturate(1200%) hue-rotate(345deg) brightness(110%) contrast(105%) drop-shadow(0 0 4px rgba(250, 204, 21, 0.7)) !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+  input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    filter: brightness(0) saturate(100%) invert(95%) sepia(90%) saturate(1600%) hue-rotate(350deg) brightness(130%) drop-shadow(0 0 8px rgba(250, 204, 21, 1)) !important;
+    transform: scale(1.25);
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;

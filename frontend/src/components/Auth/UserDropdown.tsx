@@ -1,15 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  User as UserIcon, 
   LogOut, 
   ChevronDown, 
   Shield, 
   Sparkles, 
   FlaskConical, 
   BookmarkCheck, 
-  Activity,
-  LogIn,
-  UserPlus
+  LogIn, 
+  UserPlus 
 } from 'lucide-react';
 import { useAuth } from '../../shared/context/AuthContext';
 import { Link } from 'react-router-dom';

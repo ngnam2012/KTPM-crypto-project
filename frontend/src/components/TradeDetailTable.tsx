@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Clock, Filter, DollarSign, Download, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Clock, Download } from 'lucide-react';
 import { getDeviceTimezoneOffset, formatLocalDateTime } from '../shared/lib/timezone';
 
 export interface TradeRecord {
@@ -7,8 +7,10 @@ export interface TradeRecord {
   symbol?: string;
   type: 'LONG' | 'SHORT';
   entry_time: string;
+  entry_timestamp?: number;
   entry_price: number;
   exit_time: string;
+  exit_timestamp?: number;
   exit_price: number;
   volume_usd?: number;
   stop_loss?: number | null;
@@ -168,6 +170,15 @@ export const TradeDetailTable: React.FC<TradeDetailTableProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Search Box */}
+          <input
+            type="text"
+            placeholder="Search symbol / date..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="bg-bg-deep border border-border-subtle rounded-xl px-2.5 py-1 text-xs text-text-main outline-none focus:border-brand-400 w-36 font-mono"
+          />
+
           {/* Quick Filters */}
           <div className="flex bg-bg-deep p-1 rounded-xl border border-border-subtle text-xs font-semibold">
             {(['ALL', 'WINS', 'LOSSES', 'LONG', 'SHORT'] as FilterType[]).map(tab => (
@@ -234,20 +245,20 @@ export const TradeDetailTable: React.FC<TradeDetailTableProps> = ({
             {sortedTrades.map((trade, idx) => {
               const isProfit = trade.profit_pct > 0;
               const isLoss = trade.profit_pct < 0;
-              const isSelected = selectedTradeId === trade.id || selectedTradeId === String(idx + 1);
+              const isSelected = Boolean(selectedTradeId && (selectedTradeId === trade.id || selectedTradeId === `${trade.entry_time}-${trade.type}`));
 
               return (
                 <tr 
-                  key={trade.id || idx} 
+                  key={trade.id || `${trade.entry_time}-${idx}`} 
                   onClick={() => onRowClick && onRowClick(trade)}
                   className={`transition-colors cursor-pointer ${
                     isSelected 
-                      ? 'bg-brand-500/15 border-l-4 border-brand-400' 
+                      ? 'bg-brand-500/15 border-l-4 border-brand-400 font-semibold' 
                       : idx % 2 === 0 ? 'bg-bg-panel/40 hover:bg-bg-surface/60' : 'bg-transparent hover:bg-bg-surface/60'
                   }`}
                 >
                   <td className="px-3.5 py-2.5 whitespace-nowrap font-mono text-text-dim text-[11px]">
-                    #{idx + 1}
+                    #{trade.id || idx + 1}
                   </td>
                   <td className="px-3.5 py-2.5 whitespace-nowrap font-sans font-bold text-text-main">
                     {trade.symbol || 'BTC/USDT'}

@@ -37,15 +37,21 @@ class AIStrategyParser:
 
         # Extract Stop Loss
         stop_loss_pct = 2.0
-        sl_match = re.search(r'(stop\s*loss|sl|cắt lỗ|cắt)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
+        sl_match = re.search(r'(stop\s*loss|stoploss|sl|cắt\s*lỗ|cắt)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
         if sl_match:
             stop_loss_pct = float(sl_match.group(2))
 
         # Extract Take Profit
         take_profit_pct = 4.0
-        tp_match = re.search(r'(take\s*profit|tp|chốt lời|chốt)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
+        tp_match = re.search(r'(take\s*profit|takeprofit|tp|chốt\s*lời|chốt\s*lai|chốt)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
         if tp_match:
             take_profit_pct = float(tp_match.group(2))
+
+        # Extract Trailing Stop
+        trailing_stop_pct = None
+        ts_match = re.search(r'(trailing\s*stop|trailing|ts)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
+        if ts_match:
+            trailing_stop_pct = float(ts_match.group(2))
 
         # 1. Check RSI
         if any(w in p_lower for w in ["rsi", "relative strength", "quá mua", "quá bán", "oversold", "overbought"]):
@@ -53,6 +59,11 @@ class AIStrategyParser:
             oversold = 30
             overbought = 70
             
+            # Check window parameter e.g. RSI(14) or RSI 14
+            rsi_win = re.search(r'rsi\s*\(?\s*(\d+)\s*\)?', p_lower)
+            if rsi_win:
+                window = int(rsi_win.group(1))
+
             os_match = re.search(r'(quá bán|oversold|<|dưới|dưới mức|below)\s*(\d+)', p_lower)
             if os_match:
                 oversold = int(os_match.group(2))
@@ -60,7 +71,7 @@ class AIStrategyParser:
             if ob_match:
                 overbought = int(ob_match.group(2))
 
-            indicators.append({"name": "RSI", "period": window})
+            indicators.append({"name": "RSI", "period": window, "oversold": oversold, "overbought": overbought})
             long_conditions.append(f"RSI ({window}) < {oversold}")
             short_conditions.append(f"RSI ({window}) > {overbought}")
 
@@ -74,9 +85,13 @@ class AIStrategyParser:
         if any(w in p_lower for w in ["bollinger", "bb", "dải bollinger", "std", "lower band", "upper band"]):
             period = 20
             std_dev = 2.0
-            p_match = re.search(r'bollinger.*?(\d+)', p_lower)
-            if p_match:
-                period = int(p_match.group(1))
+            
+            # Extract period & std_dev e.g. Bollinger Lower Band (20, 2) or BB(20, 2.5) or Bollinger 20 2
+            bb_match = re.search(r'(?:bollinger|bb)[^\d]*\(?\s*(\d+)(?:[,\s]+(\d+(?:\.\d+)?))?\s*\)?', p_lower)
+            if bb_match:
+                period = int(bb_match.group(1))
+                if bb_match.group(2):
+                    std_dev = float(bb_match.group(2))
 
             indicators.append({"name": "BollingerBands", "period": period, "stdDev": std_dev})
             long_conditions.append(f"Close Price falls below Bollinger Lower Band ({period}, {std_dev})")
@@ -226,8 +241,10 @@ class AIStrategyParser:
             "risk_management": {
                 "stop_loss": f"Stop Loss: {stop_loss_pct}%",
                 "take_profit": f"Take Profit: {take_profit_pct}%",
+                "trailing_stop": f"Trailing Stop: {trailing_stop_pct}%" if trailing_stop_pct else "None",
                 "stop_loss_pct": stop_loss_pct,
-                "take_profit_pct": take_profit_pct
+                "take_profit_pct": take_profit_pct,
+                "trailing_stop_pct": trailing_stop_pct
             },
             "timeframe": "1h (Default)",
             "applicability": "All USDT Trading Pairs (Configurable)",

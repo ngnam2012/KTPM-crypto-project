@@ -46,8 +46,16 @@ class EventBus:
         event type that already has in-process subscribers.
         """
         try:
-            from redis.asyncio import Redis
-            self._redis = Redis.from_url(self._redis_url, decode_responses=True)
+            from redis.asyncio import Redis, ConnectionPool
+            pool = ConnectionPool.from_url(
+                self._redis_url,
+                max_connections=50,
+                decode_responses=True,
+                socket_timeout=15,
+                socket_connect_timeout=5
+            )
+            self._redis = Redis(connection_pool=pool)
+            self._xadd_sem = asyncio.Semaphore(20)
             await self._redis.ping()
             logger.info("EventBus connected to Redis Streams backend.")
 
@@ -129,12 +137,20 @@ class EventBus:
         if not self._redis:
             return
         try:
-            stream_key = f"event:{event_type}"
-            payload = {"data": json.dumps(data, default=str)}
-            message_id = await self._redis.xadd(stream_key, payload)
-            logger.debug(f"XADD {stream_key}: {message_id}")
+            sem = getattr(self, "_xadd_sem", None)
+            if sem:
+                async with sem:
+                    stream_key = f"event:{event_type}"
+                    payload = {"data": json.dumps(data, default=str)}
+                    message_id = await self._redis.xadd(stream_key, payload)
+                    logger.debug(f"XADD {stream_key}: {message_id}")
+            else:
+                stream_key = f"event:{event_type}"
+                payload = {"data": json.dumps(data, default=str)}
+                message_id = await self._redis.xadd(stream_key, payload)
+                logger.debug(f"XADD {stream_key}: {message_id}")
         except Exception as exc:
-            logger.error(f"Redis XADD error for '{event_type}': {exc}")
+            logger.warning(f"Redis XADD notice for '{event_type}': {exc}")
 
     async def _consume_loop(
         self, event_type: str, handler: Callable, consumer_name: str
@@ -195,6 +211,11 @@ class EventBus:
                 logger.info(f"Consumer '{consumer_name}' cancelled.")
                 break
             except Exception as exc:
+                err_str = str(exc)
+                if "Timeout reading" in err_str or "TimeoutError" in type(exc).__name__:
+                    # Normal idle cycle while waiting for new messages on Redis stream
+                    await asyncio.sleep(0.1)
+                    continue
                 logger.error(
                     f"Error in consumer '{consumer_name}' on '{stream_key}': {exc}"
                 )

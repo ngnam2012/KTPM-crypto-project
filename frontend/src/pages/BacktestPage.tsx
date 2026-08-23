@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { 
   Play, 
   FlaskConical, 
@@ -8,7 +9,6 @@ import {
   DollarSign, 
   Sliders, 
   TrendingUp, 
-  TrendingDown, 
   AlertTriangle, 
   CheckCircle2, 
   Clock, 
@@ -17,8 +17,7 @@ import {
   Layers, 
   Check, 
   X,
-  RefreshCw,
-  Award
+  RefreshCw
 } from 'lucide-react';
 import { TradingChart, type TradingChartHandle } from '../components/Charts/TradingChart';
 import { TradeDetailTable, type TradeRecord } from '../components/TradeDetailTable';
@@ -46,6 +45,8 @@ interface BacktestMetrics {
 }
 
 export const BacktestPage: React.FC = () => {
+  const location = useLocation();
+
   // Available strategies from backend
   const [availableStrategies, setAvailableStrategies] = useState<StrategyMetadata[]>([]);
   
@@ -62,7 +63,9 @@ export const BacktestPage: React.FC = () => {
   // Date Range (from - to)
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [candleLimit, setCandleLimit] = useState<number>(2000);
+  const [candleLimit] = useState<number>(2000);
+  const startDateInputRef = useRef<HTMLInputElement>(null);
+  const endDateInputRef = useRef<HTMLInputElement>(null);
 
   // Risk Management
   const [takeProfitPct, setTakeProfitPct] = useState<string>("");
@@ -89,6 +92,9 @@ export const BacktestPage: React.FC = () => {
 
   const chartRef = useRef<TradingChartHandle>(null);
 
+  // Strategy Selection Mode: 'single' (1-click to test individual strategy) vs 'composite' (multi-select)
+  const [strategyMode, setStrategyMode] = useState<'single' | 'composite'>('single');
+
   // Fetch available strategies on mount
   useEffect(() => {
     fetch('http://localhost:8000/api/v1/strategies')
@@ -101,10 +107,211 @@ export const BacktestPage: React.FC = () => {
       .catch(err => console.error("Error fetching strategies:", err));
   }, []);
 
-  const toggleStrategy = (id: string) => {
-    setSelectedStrategies(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
+  const executeBacktest = async (customPayload?: any) => {
+    const payload = customPayload || {
+      strategies: selectedStrategies.map(id => ({
+        id,
+        params: compositeLogic === "WEIGHTED" ? { weight: strategyWeights[id] || 0.5 } : {}
+      })),
+      logic: compositeLogic,
+      symbol: symbol,
+      timeframe: timeframe,
+      limit: candleLimit,
+      initial_capital: Number(initialCapital) || 100,
+      fee_pct: Number(feePct) || 0.05,
+      slippage_bps: Number(slippageBps) || 5.0,
+      start_date: startDate ? new Date(startDate).toISOString() : null,
+      end_date: endDate ? new Date(endDate).toISOString() : null,
+      take_profit_pct: takeProfitPct ? parseFloat(takeProfitPct) : null,
+      stop_loss_pct: stopLossPct ? parseFloat(stopLossPct) : null,
+      trailing_stop_pct: trailingStopPct ? parseFloat(trailingStopPct) : null
+    };
+
+    if (!payload.strategies || payload.strategies.length === 0) {
+      setToast({ message: "Please select at least 1 strategy to backtest.", type: 'error' });
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+
+    setLoading(true);
+    setMetrics(null);
+    setTrades([]);
+    setSelectedTradeId(null);
+    if (chartRef.current?.clearAll) {
+      chartRef.current.clearAll();
+    } else if (chartRef.current?.setMarkers) {
+      chartRef.current.setMarkers([]);
+    }
+
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/backtest/run-with-trades", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || "Backtest execution failed.");
+      }
+
+      const data = await res.json();
+      setMetrics(data.metrics || null);
+      setTrades(data.trades || []);
+
+      if (data.ohlcv && chartRef.current?.setCandles) {
+        chartRef.current.setCandles(data.ohlcv);
+      }
+      if (chartRef.current) {
+        chartRef.current.setMarkers(data.markers || []);
+      }
+
+      if ((data.trades?.length || 0) === 0) {
+        setToast({ 
+          message: `Backtest completed with 0 trades. Try adjusting indicators or time range.`, 
+          type: 'info' as any 
+        });
+      } else {
+        setToast({ 
+          message: `Backtest executed successfully! (${data.trades.length} trades visualized on chart)`, 
+          type: 'success' 
+        });
+      }
+      setTimeout(() => setToast(null), 3500);
+    } catch (err: any) {
+      console.error(err);
+      setToast({ message: err.message || 'Error running backtest', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRunBacktest = () => executeBacktest();
+
+  const applyAndRunStrategy = (stratData: any, autoRun: boolean = true) => {
+    if (!stratData) return;
+
+    // 1. Extract strategy IDs
+    const rawList = stratData.strategies || stratData.params?.strategies || stratData.json_schema?.strategies || [];
+    let stratIds: string[] = [];
+    let weights: Record<string, number> = {};
+
+    if (Array.isArray(rawList)) {
+      rawList.forEach((s: any) => {
+        const sid = typeof s === 'string' ? s : (s.id || s.name);
+        if (sid) {
+          stratIds.push(sid);
+          if (s.params?.weight) weights[sid] = s.params.weight;
+        }
+      });
+    }
+
+    if (stratIds.length === 0 && stratData.strategy_ids) {
+      stratIds = stratData.strategy_ids;
+    }
+
+    if (stratIds.length > 0) {
+      setSelectedStrategies(stratIds);
+      setStrategyMode(stratIds.length > 1 ? 'composite' : 'single');
+    }
+
+    // 2. Logic & Weights
+    const logic = stratData.logic || stratData.params?.logic || stratData.json_schema?.logic;
+    if (logic && ['AND', 'OR', 'WEIGHTED'].includes(logic)) {
+      setCompositeLogic(logic as any);
+    }
+    if (Object.keys(weights).length > 0) {
+      setStrategyWeights(weights);
+    }
+
+    // 3. Stop Loss / Take Profit / Trailing Stop
+    const sl = stratData.stop_loss_pct ??
+      stratData.risk_management?.stop_loss_pct ??
+      stratData.params?.stop_loss_pct ??
+      stratData.params?.json_schema?.risk_management?.stop_loss_pct ??
+      stratData.json_schema?.riskManagement?.stopLoss?.value;
+
+    if (sl !== undefined && sl !== null && sl !== '') {
+      setStopLossPct(String(sl));
+    }
+
+    const tp = stratData.take_profit_pct ??
+      stratData.risk_management?.take_profit_pct ??
+      stratData.params?.take_profit_pct ??
+      stratData.params?.json_schema?.risk_management?.take_profit_pct ??
+      stratData.json_schema?.riskManagement?.takeProfit?.value;
+
+    if (tp !== undefined && tp !== null && tp !== '') {
+      setTakeProfitPct(String(tp));
+    }
+
+    const ts = stratData.trailing_stop_pct ??
+      stratData.risk_management?.trailing_stop_pct ??
+      stratData.params?.trailing_stop_pct;
+
+    if (ts !== undefined && ts !== null && ts !== '') {
+      setTrailingStopPct(String(ts));
+    }
+
+    // 4. Symbol & Timeframe
+    if (stratData.symbol) setSymbol(stratData.symbol);
+    const tf = stratData.timeframe || stratData.params?.json_schema?.timeframe || stratData.json_schema?.timeframe;
+    let effectiveTf = timeframe;
+    if (tf) {
+      const cleanTf = String(tf).replace(/\s*\(.*\)/, '').trim();
+      if (['1m', '5m', '15m', '1h', '4h', '1d'].includes(cleanTf)) {
+        setTimeframe(cleanTf);
+        effectiveTf = cleanTf;
+      }
+    }
+
+    const name = stratData.name || stratData.strategy_name || "Custom Strategy";
+    setToast({ 
+      message: `Đã nạp chiến lược '${name}' (SL: ${sl ?? '2'}%, TP: ${tp ?? '4'}%)`, 
+      type: 'success' 
+    });
+    setTimeout(() => setToast(null), 3500);
+
+    // 5. Auto run backtest if requested
+    if (autoRun && stratIds.length > 0) {
+      setTimeout(() => {
+        executeBacktest({
+          strategies: stratIds.map(id => ({
+            id,
+            params: logic === "WEIGHTED" ? { weight: weights[id] || 0.5 } : {}
+          })),
+          logic: (logic as any) || "AND",
+          symbol: stratData.symbol || symbol,
+          timeframe: effectiveTf,
+          limit: candleLimit,
+          initial_capital: Number(initialCapital) || 100,
+          fee_pct: Number(feePct) || 0.05,
+          slippage_bps: Number(slippageBps) || 5.0,
+          take_profit_pct: tp ? parseFloat(String(tp)) : null,
+          stop_loss_pct: sl ? parseFloat(String(sl)) : null,
+          trailing_stop_pct: ts ? parseFloat(String(ts)) : null
+        });
+      }, 150);
+    }
+  };
+
+  // Check navigation location state from Library / Studio
+  useEffect(() => {
+    if (location.state?.strategy) {
+      applyAndRunStrategy(location.state.strategy, location.state.autoRun ?? true);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
+  const handleSelectStrategy = (id: string) => {
+    if (strategyMode === 'single') {
+      setSelectedStrategies([id]);
+    } else {
+      setSelectedStrategies(prev => 
+        prev.includes(id) ? (prev.length > 1 ? prev.filter(x => x !== id) : prev) : [...prev, id]
+      );
+    }
   };
 
   const formatToDateTimeLocal = (d: Date): string => {
@@ -125,78 +332,22 @@ export const BacktestPage: React.FC = () => {
     setStartDate(formatToDateTimeLocal(start));
   };
 
-  const handleRunBacktest = async () => {
-    if (selectedStrategies.length === 0) {
-      setToast({ message: "Please select at least 1 strategy to backtest.", type: 'error' });
-      setTimeout(() => setToast(null), 3000);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const payload: any = {
-        strategies: selectedStrategies.map(id => ({
-          id,
-          params: compositeLogic === "WEIGHTED" ? { weight: strategyWeights[id] || 0.5 } : {}
-        })),
-        logic: compositeLogic,
-        symbol: symbol,
-        timeframe: timeframe,
-        limit: candleLimit,
-        initial_capital: Number(initialCapital) || 100,
-        fee_pct: Number(feePct) || 0.05,
-        slippage_bps: Number(slippageBps) || 5.0,
-        start_date: startDate ? new Date(startDate).toISOString() : null,
-        end_date: endDate ? new Date(endDate).toISOString() : null,
-        take_profit_pct: takeProfitPct ? parseFloat(takeProfitPct) : null,
-        stop_loss_pct: stopLossPct ? parseFloat(stopLossPct) : null,
-        trailing_stop_pct: trailingStopPct ? parseFloat(trailingStopPct) : null
-      };
-
-      const res = await fetch("http://localhost:8000/api/v1/backtest/run-with-trades", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || "Backtest execution failed.");
-      }
-
-      const data = await res.json();
-      if (data.metrics) {
-        setMetrics(data.metrics);
-      }
-      if (data.trades) {
-        setTrades(data.trades);
-      }
-      if (data.ohlcv && chartRef.current?.setCandles) {
-        chartRef.current.setCandles(data.ohlcv);
-      }
-      if (data.markers && chartRef.current) {
-        chartRef.current.setMarkers(data.markers);
-      }
-
-      setToast({ message: `Backtest executed successfully! (${data.trades?.length || 0} trades visualized on chart)`, type: 'success' });
-      setTimeout(() => setToast(null), 3500);
-    } catch (err: any) {
-      console.error(err);
-      setToast({ message: err.message || 'Error running backtest', type: 'error' });
-      setTimeout(() => setToast(null), 5000);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleTradeClick = (trade: TradeRecord) => {
     setSelectedTradeId(trade.id || null);
     if (chartRef.current) {
-      const isEntryUTC = !trade.entry_time.includes('Z') && !trade.entry_time.includes('+');
-      const isExitUTC = !trade.exit_time.includes('Z') && !trade.exit_time.includes('+');
-      const entryTime = new Date(isEntryUTC ? trade.entry_time + 'Z' : trade.entry_time).getTime() / 1000;
-      const exitTime = new Date(isExitUTC ? trade.exit_time + 'Z' : trade.exit_time).getTime() / 1000;
-      chartRef.current.highlightTrade(entryTime, exitTime);
+      let entryTime = trade.entry_timestamp;
+      let exitTime = trade.exit_timestamp;
+      if (!entryTime) {
+        const isEntryUTC = !trade.entry_time.includes('Z') && !trade.entry_time.includes('+');
+        entryTime = Math.floor(new Date(isEntryUTC ? trade.entry_time + 'Z' : trade.entry_time).getTime() / 1000);
+      }
+      if (!exitTime) {
+        const isExitUTC = !trade.exit_time.includes('Z') && !trade.exit_time.includes('+');
+        exitTime = Math.floor(new Date(isExitUTC ? trade.exit_time + 'Z' : trade.exit_time).getTime() / 1000);
+      }
+      if (entryTime && exitTime) {
+        chartRef.current.highlightTrade(entryTime, exitTime);
+      }
     }
   };
 
@@ -212,15 +363,11 @@ export const BacktestPage: React.FC = () => {
       if (!res.ok) throw new Error("Failed to parse prompt into strategy schema.");
       const data = await res.json();
       
-      const stratIds = data.strategies.map((s: any) => s.id);
-      setSelectedStrategies(stratIds);
-      if (data.logic) setCompositeLogic(data.logic);
+      applyAndRunStrategy(data, false);
 
-      setToast({ message: `Successfully generated: ${data.name}!`, type: 'success' });
       setIsAiModalOpen(false);
       setAiPrompt("");
       setAiSourceUrl("");
-      setTimeout(() => setToast(null), 4000);
     } catch (e: any) {
       setToast({ message: e.message || "AI Strategy generation error", type: 'error' });
       setTimeout(() => setToast(null), 4000);
@@ -444,23 +591,25 @@ export const BacktestPage: React.FC = () => {
                 </button>
               </span>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div className="relative">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="relative flex items-center group">
                 <input
+                  ref={startDateInputRef}
                   type="datetime-local"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-bg-deep border border-border-subtle text-text-main text-xs font-mono rounded-xl p-2.5 outline-none focus:border-brand-400 transition-colors"
-                  title="From Date & Time"
+                  className="w-full bg-bg-surface/90 hover:bg-bg-surface border border-border-subtle hover:border-brand-500/50 text-text-main text-xs font-mono rounded-xl p-2.5 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400/30 transition-all cursor-pointer shadow-sm [color-scheme:dark]"
+                  title="From Date & Time (Click anywhere or calendar icon to pick)"
                 />
               </div>
-              <div className="relative">
+              <div className="relative flex items-center group">
                 <input
+                  ref={endDateInputRef}
                   type="datetime-local"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full bg-bg-deep border border-border-subtle text-text-main text-xs font-mono rounded-xl p-2.5 outline-none focus:border-brand-400 transition-colors"
-                  title="To Date & Time"
+                  className="w-full bg-bg-surface/90 hover:bg-bg-surface border border-border-subtle hover:border-brand-500/50 text-text-main text-xs font-mono rounded-xl p-2.5 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400/30 transition-all cursor-pointer shadow-sm [color-scheme:dark]"
+                  title="To Date & Time (Click anywhere or calendar icon to pick)"
                 />
               </div>
             </div>
@@ -521,14 +670,43 @@ export const BacktestPage: React.FC = () => {
         {/* Strategy Selection (Single vs Composite) */}
         <div className="pt-3 border-t border-border-subtle">
           <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
-            <span className="text-xs font-bold text-text-main uppercase tracking-wider flex items-center gap-1.5">
-              <Layers size={14} className="text-brand-400" />
-              Strategy Selection (Single / Composite):
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-text-main uppercase tracking-wider flex items-center gap-1.5">
+                <Layers size={14} className="text-brand-400" />
+                Strategy Mode:
+              </span>
+              <div className="flex bg-bg-deep p-1 rounded-xl border border-border-subtle text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStrategyMode('single');
+                    setSelectedStrategies([selectedStrategies[0] || 'ma_crossover']);
+                  }}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    strategyMode === 'single' 
+                      ? 'bg-brand-500 text-bg-deep font-bold shadow-sm' 
+                      : 'text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  ⚡ Single Strategy (1-Click Quick Test)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStrategyMode('composite')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    strategyMode === 'composite' 
+                      ? 'bg-brand-500 text-bg-deep font-bold shadow-sm' 
+                      : 'text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  🧩 Composite Strategy (Multi-Select)
+                </button>
+              </div>
+            </div>
 
-            {selectedStrategies.length > 1 && (
+            {strategyMode === 'composite' && selectedStrategies.length > 1 && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted">Combination Logic:</span>
+                <span className="text-xs text-text-muted font-medium">Combination Logic:</span>
                 <select
                   value={compositeLogic}
                   onChange={(e: any) => setCompositeLogic(e.target.value)}
@@ -548,17 +726,17 @@ export const BacktestPage: React.FC = () => {
               return (
                 <div
                   key={strat.id}
-                  onClick={() => toggleStrategy(strat.id)}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 flex flex-col justify-between ${
+                  onClick={() => handleSelectStrategy(strat.id)}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 flex flex-col justify-between select-none ${
                     isSelected 
-                      ? 'bg-brand-500/15 border-brand-500/50 shadow-sm text-text-main ring-1 ring-brand-500/40' 
-                      : 'bg-bg-deep/70 border-border-subtle text-text-muted hover:border-brand-500/30 hover:text-text-main'
+                      ? 'bg-brand-500/15 border-brand-500/50 shadow-sm text-text-main ring-1 ring-brand-500/40 scale-[1.02]' 
+                      : 'bg-bg-deep/70 border-border-subtle text-text-muted hover:border-brand-500/30 hover:text-text-main hover:bg-bg-deep'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-1">
                     <span className="text-xs font-bold truncate" title={strat.name}>{strat.name}</span>
-                    <div className={`w-4 h-4 rounded flex items-center justify-center text-[10px] ${isSelected ? 'bg-brand-500 text-bg-deep font-bold' : 'border border-border-subtle'}`}>
-                      {isSelected && <Check size={12} strokeWidth={3} />}
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${isSelected ? 'bg-brand-500 text-bg-deep font-bold shadow-sm' : 'border border-border-subtle'}`}>
+                      {isSelected && <Check size={11} strokeWidth={3} />}
                     </div>
                   </div>
                   <span className="text-[10px] text-text-muted mt-1 line-clamp-1" title={strat.description}>
@@ -681,7 +859,7 @@ export const BacktestPage: React.FC = () => {
             </span>
           </div>
           <div className="h-[390px]">
-            <TradingChart ref={chartRef} symbol={symbol} initialTimeframe={timeframe} />
+            <TradingChart ref={chartRef} symbol={symbol} initialTimeframe={timeframe} enableLiveStream={false} />
           </div>
         </div>
 

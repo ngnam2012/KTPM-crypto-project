@@ -65,6 +65,47 @@ async def generate_strategy_from_prompt(request: PromptStrategyRequest):
         logger.exception(f"Error generating strategy from prompt: {e}")
         raise HTTPException(status_code=500, detail="Failed to parse strategy from prompt.")
 
+def _normalize_strategy_params(params: Any) -> Any:
+    """Recursively clean and normalize dictionary for strategy equivalence check."""
+    if isinstance(params, dict):
+        ignore_keys = {"id", "created_at", "updated_at", "author", "timestamp", "description", "source_url"}
+        return {k: _normalize_strategy_params(v) for k, v in sorted(params.items()) if k not in ignore_keys}
+    elif isinstance(params, list):
+        return [_normalize_strategy_params(item) for item in params]
+    elif isinstance(params, (int, float)):
+        return round(float(params), 4)
+    elif isinstance(params, str):
+        return params.strip().lower()
+    return params
+
+
+def _find_duplicate_strategy(
+    db: Session,
+    name: str,
+    new_params: Optional[Dict[str, Any]],
+    user_id: Optional[str] = None
+) -> Optional[StrategyDefinitionModel]:
+    """Checks if an identical strategy name or identical parameter set already exists in Library."""
+    query = db.query(StrategyDefinitionModel)
+    if user_id:
+        query = query.filter((StrategyDefinitionModel.user_id == user_id) | (StrategyDefinitionModel.user_id == None))
+    
+    existing_list = query.all()
+    norm_new = _normalize_strategy_params(new_params or {})
+    norm_name = name.strip().lower()
+
+    for item in existing_list:
+        # 1. Match by exact Name
+        if item.name and item.name.strip().lower() == norm_name:
+            return item
+        # 2. Match by exact Parameter Configuration
+        item_norm = _normalize_strategy_params(item.params_json or {})
+        if item_norm and norm_new and item_norm == norm_new:
+            return item
+
+    return None
+
+
 @router.post("/save")
 async def save_custom_strategy(
     request: StrategySaveRequest,
@@ -73,8 +114,21 @@ async def save_custom_strategy(
 ):
     """
     Saves a customized or validated strategy into Strategy Library in database, optionally tagged with current user.
+    Prevents duplicates if an identical strategy name or configuration already exists.
     """
     try:
+        dup = _find_duplicate_strategy(
+            db,
+            request.name,
+            request.json_schema,
+            current_user.id if current_user else None
+        )
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Chiến lược với các thông số này đã tồn tại trong thư viện ('{dup.name}')."
+            )
+
         db_id = str(uuid4())
         record = StrategyDefinitionModel(
             id=db_id,
@@ -94,9 +148,35 @@ async def save_custom_strategy(
             "message": f"Strategy '{request.name}' saved to library successfully!",
             "author": current_user.username if current_user else "Public / Anonymous"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Error saving strategy: {e}")
         raise HTTPException(status_code=500, detail="Failed to save strategy to library.")
+
+
+@router.delete("/saved/{strategy_id}")
+async def delete_saved_strategy(
+    strategy_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_optional_user)
+):
+    """
+    Deletes a saved strategy from Library.
+    """
+    try:
+        record = db.query(StrategyDefinitionModel).filter(StrategyDefinitionModel.id == strategy_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="Strategy not found.")
+        
+        db.delete(record)
+        db.commit()
+        return {"message": f"Strategy '{record.name}' deleted successfully."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting strategy: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete strategy.")
 
 @router.get("/saved")
 async def get_saved_strategies(db: Session = Depends(get_db)):

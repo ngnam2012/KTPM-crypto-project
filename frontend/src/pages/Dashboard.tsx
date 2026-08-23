@@ -7,9 +7,7 @@ import {
   Bot, 
   Trophy, 
   ExternalLink, 
-  Radio, 
-  Layers, 
-  Zap
+  Radio 
 } from 'lucide-react';
 import { getDeviceTimezoneOffset } from '../shared/lib/timezone';
 
@@ -67,7 +65,7 @@ export const Dashboard: React.FC = () => {
                 </span>
               </h1>
               <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-                Simultaneously monitor 4 independent timeframes with live MA(20), Volume, and technical LONG / SHORT / EXIT signals.
+                Simultaneously monitor 4 independent timeframes with live MA(20) and Volume in real-time.
               </p>
             </div>
           </div>
@@ -189,28 +187,28 @@ export const Dashboard: React.FC = () => {
         {/* Chart 1 */}
         <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart key={`${globalSymbol}-${tf1}`} symbol={globalSymbol} initialTimeframe={tf1} autoSignals={true} />
+            <TradingChart key={`${globalSymbol}-${tf1}`} symbol={globalSymbol} initialTimeframe={tf1} />
           </div>
         </div>
 
         {/* Chart 2 */}
         <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart key={`${globalSymbol}-${tf2}`} symbol={globalSymbol} initialTimeframe={tf2} autoSignals={true} />
+            <TradingChart key={`${globalSymbol}-${tf2}`} symbol={globalSymbol} initialTimeframe={tf2} />
           </div>
         </div>
 
         {/* Chart 3 */}
         <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart key={`${globalSymbol}-${tf3}`} symbol={globalSymbol} initialTimeframe={tf3} autoSignals={true} />
+            <TradingChart key={`${globalSymbol}-${tf3}`} symbol={globalSymbol} initialTimeframe={tf3} />
           </div>
         </div>
 
         {/* Chart 4 */}
         <div className="bg-bg-panel/60 border border-border-subtle rounded-2xl p-3.5 backdrop-blur-md shadow-md h-[460px] flex flex-col">
           <div className="flex-1 w-full h-full min-h-[380px]">
-            <TradingChart key={`${globalSymbol}-${tf4}`} symbol={globalSymbol} initialTimeframe={tf4} autoSignals={true} />
+            <TradingChart key={`${globalSymbol}-${tf4}`} symbol={globalSymbol} initialTimeframe={tf4} />
           </div>
         </div>
       </div>

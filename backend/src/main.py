@@ -134,6 +134,7 @@ class BacktestResponse(BaseModel):
     timeframe: str
     metrics: Dict[str, Any]
 
+from datetime import datetime, timezone
 from dateutil.parser import parse
 
 class BacktestWithTradesResponse(BaseModel):
@@ -332,45 +333,57 @@ async def run_backtest_with_trades(
             fee_pct=request.fee_pct,
             slippage_bps=request.slippage_bps
         )
+
+        # Ensure metrics counts match the discrete simulated trades list 100%
+        total_t = len(raw_trades)
+        wins_t = sum(1 for t in raw_trades if t.profit_pct > 0)
+        losses_t = total_t - wins_t
+        winrate_t = round(wins_t / total_t, 4) if total_t > 0 else 0.0
+        metrics['total_trades'] = total_t
+        metrics['wins_count'] = wins_t
+        metrics['losses_count'] = losses_t
+        metrics['winrate'] = winrate_t
+
+        def to_utc_timestamp(dt_val) -> Optional[int]:
+            if dt_val is None:
+                return None
+            if isinstance(dt_val, (int, float)):
+                return int(dt_val / 1000 if dt_val > 2e9 else dt_val)
+            if hasattr(dt_val, 'tzinfo') and dt_val.tzinfo is not None:
+                return int(dt_val.timestamp())
+            if hasattr(dt_val, 'timestamp'):
+                return int(dt_val.replace(tzinfo=timezone.utc).timestamp())
+            if isinstance(dt_val, str):
+                try:
+                    parsed = parse(dt_val)
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    return int(parsed.timestamp())
+                except Exception:
+                    return None
+            return None
+
         trades = []
         markers = []
         for t in raw_trades:
             td = t.to_dict()
             td['type'] = td.pop('trade_type')
             td['id'] = str(td.pop('trade_id'))
+
+            # Accurate UTC epoch seconds for exact chart synchronization
+            e_val = to_utc_timestamp(t.entry_time)
+            x_val = to_utc_timestamp(t.exit_time)
+            td['entry_timestamp'] = e_val
+            td['exit_timestamp'] = x_val
             trades.append(td)
 
             # Generate precise LONG/SHORT visual markers
-            e_time = t.entry_time
-            e_val = None
-            if isinstance(e_time, str):
-                try:
-                    e_val = int(parse(e_time).timestamp())
-                except:
-                    pass
-            elif hasattr(e_time, 'timestamp'):
-                e_val = int(e_time.timestamp())
-            elif isinstance(e_time, (int, float)):
-                e_val = int(e_time / 1000 if e_time > 2e9 else e_time)
-
-            x_time = t.exit_time
-            x_val = None
-            if isinstance(x_time, str):
-                try:
-                    x_val = int(parse(x_time).timestamp())
-                except:
-                    pass
-            elif hasattr(x_time, 'timestamp'):
-                x_val = int(x_time.timestamp())
-            elif isinstance(x_time, (int, float)):
-                x_val = int(x_time / 1000 if x_time > 2e9 else x_time)
-
             is_win = t.profit_pct >= 0
             p_sign = "+" if is_win else ""
 
             if td['type'] == "LONG":
                 # LONG Entry (Emerald arrow up below bar)
-                if e_val:
+                if e_val is not None:
                     markers.append({
                         'time': e_val,
                         'position': 'belowBar',
@@ -379,7 +392,7 @@ async def run_backtest_with_trades(
                         'text': f"LONG #{td['id']} @ ${t.entry_price:,.2f}"
                     })
                 # LONG Exit (Above bar)
-                if x_val:
+                if x_val is not None:
                     markers.append({
                         'time': x_val,
                         'position': 'aboveBar',
@@ -389,7 +402,7 @@ async def run_backtest_with_trades(
                     })
             elif td['type'] == "SHORT":
                 # SHORT Entry (Coral red arrow down above bar)
-                if e_val:
+                if e_val is not None:
                     markers.append({
                         'time': e_val,
                         'position': 'aboveBar',
@@ -398,7 +411,7 @@ async def run_backtest_with_trades(
                         'text': f"SHORT #{td['id']} @ ${t.entry_price:,.2f}"
                     })
                 # SHORT Exit (Below bar)
-                if x_val:
+                if x_val is not None:
                     markers.append({
                         'time': x_val,
                         'position': 'belowBar',
@@ -412,9 +425,11 @@ async def run_backtest_with_trades(
         # OHLCV records for exact chart alignment
         ohlcv_records = []
         for idx in range(len(df)):
-            t = df['timestamp'].iloc[idx] if 'timestamp' in df.columns else str(df.index[idx])
+            raw_t = df['timestamp'].iloc[idx] if 'timestamp' in df.columns else df.index[idx]
+            t_val = to_utc_timestamp(raw_t)
             ohlcv_records.append({
-                "timestamp": str(t),
+                "time": t_val,
+                "timestamp": str(raw_t),
                 "open": float(df['open'].iloc[idx]),
                 "high": float(df['high'].iloc[idx]),
                 "low": float(df['low'].iloc[idx]),

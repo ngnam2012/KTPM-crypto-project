@@ -47,11 +47,9 @@ class BacktestEvaluator:
         strategy_returns = positions.shift(1) * market_returns
         strategy_returns = strategy_returns.fillna(0)
         
-        # 3. Identify individual trades
-        trade_blocks = (positions != positions.shift(1)).cumsum()
-        active_blocks = trade_blocks[positions != 0]
-        
-        if active_blocks.empty:
+        # 3. Identify individual trades & calculate trade returns
+        active_mask = (positions != 0)
+        if not active_mask.any():
             return {
                 "total_return": 0.0,
                 "total_profit_usd": 0.0,
@@ -67,21 +65,26 @@ class BacktestEvaluator:
                 "total_slippage_usd": 0.0
             }
             
-        block_ids = active_blocks.shift(1).bfill()
-        trade_returns = strategy_returns.groupby(block_ids).apply(lambda r: (1 + r).prod() - 1)
+        trade_change = (positions != positions.shift(1)) & active_mask
+        trade_id = trade_change.cumsum().where(active_mask)
         
-        total_trades = len(trade_returns)
-        winning_trades = int((trade_returns > 0).sum())
-        losing_trades = int((trade_returns <= 0).sum())
-        winrate = (winning_trades / total_trades) if total_trades > 0 else 0.0
-
-        # Cost deductions per trade
+        active_returns = strategy_returns[active_mask]
+        active_trade_id = trade_id[active_mask]
+        
+        trade_returns = active_returns.groupby(active_trade_id).apply(lambda r: (1 + r).prod() - 1)
+        
+        # Cost deductions per trade (round-trip fee + round-trip slippage)
         fee_rate = (fee_pct / 100.0) * 2
         slippage_rate = (slippage_bps / 10000.0) * 2
         total_cost_per_trade = (fee_rate + slippage_rate)
 
-        # Net trade returns
+        # Net trade returns (after transaction costs & slippage)
         net_trade_returns = trade_returns - total_cost_per_trade
+
+        total_trades = len(net_trade_returns)
+        winning_trades = int((net_trade_returns > 0).sum())
+        losing_trades = int((net_trade_returns <= 0).sum())
+        winrate = (winning_trades / total_trades) if total_trades > 0 else 0.0
 
         # Cumulative & Drawdown calculations
         cumulative_returns = (1 + net_trade_returns).cumprod()
