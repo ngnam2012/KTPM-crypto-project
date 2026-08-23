@@ -147,12 +147,12 @@ class SmartCrawler:
             title_selector = "title"
 
         # Content
-        valid_ps = [p for p in parser.paragraphs if len(p) > 25]
-        if valid_ps:
-            content = " ".join(valid_ps[:10])
+        paragraphs = [p.strip() for p in parser.paragraphs if len(p.strip()) > 5]
+        if paragraphs:
+            content = "\n\n".join(paragraphs[:50])
             content_selector = "article p"
         else:
-            content = " ".join([t for t in parser.text_parts if len(t) > 30][:10])
+            content = "\n\n".join([t.strip() for t in parser.text_parts if len(t.strip()) > 10][:50])
             content_selector = "p"
 
         published_at = datetime.utcnow()
@@ -189,7 +189,7 @@ class SmartCrawler:
             "url": url,
             "domain": domain,
             "title": title,
-            "content": content[:1000],
+            "content": content[:4000],
             "published_at": published_at.isoformat(),
             "sentiment_score": round(sentiment_res.score, 4),
             "sentiment_label": sentiment_res.label.lower(),

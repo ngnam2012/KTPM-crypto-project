@@ -188,7 +188,7 @@ export const StrategyStudioPage: React.FC = () => {
       if (!res.ok) throw new Error("Failed to extract article content.");
       const crawlData = await res.json();
 
-      const extractedPrompt = `${crawlData.title}: ${crawlData.content.slice(0, 300)}`;
+      const extractedPrompt = `${crawlData.title}\n\n${crawlData.content}`;
       setPromptText(extractedPrompt);
 
       // Auto trigger analysis
@@ -379,11 +379,11 @@ export const StrategyStudioPage: React.FC = () => {
                 <Sparkles size={14} className="text-accent-purple" />
                 Strategy Prompt (Natural Language)
               </label>
-              <span className="text-[11px] text-text-muted font-mono">{promptText.length}/1000</span>
+              <span className="text-[11px] text-text-muted font-mono">{promptText.length}/4000</span>
             </div>
 
             <textarea
-              rows={6}
+              rows={7}
               value={promptText}
               onChange={(e) => setPromptText(e.target.value)}
               placeholder="e.g. RSI < 30 and Close below Bollinger Lower Band (20, 2), Stop Loss 2%, Take Profit 4%..."
