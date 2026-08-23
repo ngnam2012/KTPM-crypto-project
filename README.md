@@ -6,14 +6,14 @@
 
 ---
 
-## 📌 Các Module Tính Năng Chính (System Capabilities)
+## Các Module Tính Năng Chính (System Capabilities)
 
-### 1. 📈 Giám Sát Thị Trường Realtime Đa Khung Thời Gian (Market Dashboard)
+### 1. Giám Sát Thị Trường Realtime Đa Khung Thời Gian (Market Dashboard)
 - **4 Biểu đồ nến đồng thời**: Theo dõi đồng thời 4 khung thời gian độc lập (`5m`, `15m`, `1h`, `4h` hoặc `1m`, `30m`, `1d`).
 - **WebSocket Multiplexing**: Kết nối luồng Binance WSS một lần ở Backend và phân phối đa luồng tới các component Frontend mà không gây tải phụ cho sàn.
 - **Đổi Timeframe động**: Thay đổi khung thời gian của từng biểu đồ độc lập mà không cần reload toàn bộ trang web.
 
-### 2. 🧪 Phòng Thí Nghiệm Backtest Chuyên Sâu (Backtest Workbench - `/backtest`)
+### 2. Phòng Thí Nghiệm Backtest Chuyên Sâu (Backtest Workbench - `/backtest`)
 - **Tách riêng thành Tab độc lập**: Tối ưu không gian làm việc rộng rãi, toàn màn hình.
 - **Cấu hình kiểm thử 6 thông số chuẩn xác**:
   - Chọn Pair/Coin (`BTC/USDT`, `ETH/USDT`, `SOL/USDT`, `BNB/USDT`, `XRP/USDT`...).
@@ -27,29 +27,29 @@
 - **Khung thống kê tổng hợp**: Winrate (Wins / Losses), Total Net Profit ($ & %), Max Drawdown (MDD), Profit Factor, Sharpe Ratio, Total Trades, Tổng Phí + Slippage.
 - **Trực quan hóa trên Chart**: Đánh dấu mũi tên **BUY (Xanh)** và **SELL (Đỏ)**, click vào dòng lệnh trong bảng để zoom và highlight nến tương ứng.
 
-### 3. 🤖 AI Strategy Studio & Natural Language Parser (`/strategy-studio`)
+### 3. AI Strategy Studio & Natural Language Parser (`/strategy-studio`)
 - **Thiết kế 4 cột chuyên dụng chuẩn theo slide giảng viên**:
   - **Cột 1: Input**: Nhập mô tả chiến lược bằng ngôn ngữ tự nhiên (prompt) hoặc dán link bài viết phân tích kỹ thuật / TradingView để crawl tự động.
   - **Cột 2: Strategy Đã Phân Tích**: Bóc tách tự động điều kiện LONG, điều kiện SHORT, Quản trị rủi ro (Stop Loss 2%, Take Profit 4%), Khung thời gian và Cặp coin áp dụng.
   - **Cột 3: Định Nghĩa Strategy (JSON)**: Hiển thị mã JSON chuẩn hóa có cấu trúc và nút **Sao chép** (Copy JSON).
   - **Cột 4: Kiểm Tra & Validation + Lưu Thư Viện**: Checklist kiểm tra thiếu trường, kiểm tra logic, chỉ báo hỗ trợ, trạng thái hợp lệ, form lưu tên/version/tags và nút **"Chạy Backtest Ngay"**.
 
-### 4. 🧬 AI Search Engine & Continuous Strategy Loop (`/search`)
+### 4. AI Search Engine & Continuous Strategy Loop (`/search`)
 - Tự động sinh và tối ưu hóa hàng ngàn tổ hợp tham số chiến lược.
 - Tích hợp 2 thuật toán: **Random Search** và **Genetic Algorithm (Giải thuật Di truyền - GA)** qua các thế hệ tiến hóa.
 - Quản lý vòng lặp ngầm: Bắt đầu, Tạm dừng (Pause), Tiếp tục (Resume) và Dừng khi đạt điều kiện dừng (Stop Condition).
 
-### 5. 🏆 Bảng Xếp Hạng Động Theo Sự Kiện (Leaderboard - `/leaderboard`)
+### 5. Bảng Xếp Hạng Động Theo Sự Kiện (Leaderboard - `/leaderboard`)
 - Xếp hạng **Top-10 Chiến Lược Vượt Trội** dựa trên hàm mục tiêu tổng hợp (*Overall Score = 0.4 Return + 0.3 Winrate + 0.2 MDD + 0.1 Sharpe*).
 - **Kiến trúc hướng sự kiện (Event-Driven)**: Tự động cập nhật bảng xếp hạng tức thì qua Pub/Sub khi có ứng viên mới phá vỡ kỷ lục mà không cần refresh trình duyệt.
 
-### 6. 📰 Thu Thập Tin Tức Thông Minh & NLP Sentiment Analysis (`/news`)
+### 6. Thu Thập Tin Tức Thông Minh & NLP Sentiment Analysis (`/news`)
 - **Smart Web Crawler**: Tự động nhận diện cấu trúc thẻ HTML bài viết và lưu schema vào SQLite (`crawler_tag_schemas`) để tái sử dụng.
 - **NLP Sentiment Engine**: Sử dụng mô hình Machine Learning **FinBERT** (`distilroberta-finetuned-financial-news-sentiment-analysis`) chấm điểm cảm xúc tin tức và kích hoạt chiến lược `NewsSentimentStrategy`.
 
 ---
 
-## 🏛️ Sơ Đồ Kiến Trúc Hệ Thống (Software Architecture Diagram)
+## Sơ Đồ Kiến Trúc Hệ Thống (Software Architecture Diagram)
 
 ```mermaid
 graph TD
@@ -106,7 +106,7 @@ graph TD
 
 ---
 
-## ⚡ Các Vấn Đề Kiến Trúc & Giải Pháp Cốt Lõi (Architectural Drivers)
+## Các Vấn Đề Kiến Trúc & Giải Pháp Cốt Lõi (Architectural Drivers)
 
 | Vấn đề Kiến trúc | Giải pháp Thực thi Cụ thể |
 | :--- | :--- |
@@ -119,7 +119,7 @@ graph TD
 
 ---
 
-## 🛠️ Hướng Dẫn Cài Đặt & Khởi Chạy (Installation & Quick Start)
+## Hướng Dẫn Cài Đặt & Khởi Chạy (Installation & Quick Start)
 
 ### 1. Yêu Cầu Môi Trường
 - **Python**: `>= 3.10`
@@ -161,7 +161,7 @@ npm run dev
 
 ---
 
-## 🧪 Chạy Test Suite Tự Động (Automated Testing)
+## Chạy Test Suite Tự Động (Automated Testing)
 
 Chạy bộ kiểm thử tự động kiểm tra toàn bộ API Endpoints, Composite Strategy Logic và Financial Evaluator:
 
@@ -172,13 +172,13 @@ $env:PYTHONPATH="backend"; pytest backend/src/tests/test_main_api.py backend/src
 
 ---
 
-## 📚 Danh Mục Tài Liệu Bàn Giao (Deliverables Documentation)
+## Danh Mục Tài Liệu Bàn Giao (Deliverables Documentation)
 
 Tất cả các tài liệu kỹ thuật chi tiết đã được biên soạn đầy đủ trong thư mục [`docs/`](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/):
 
-1. 📄 **[Tài Liệu Kiến Trúc Tổng Thể (docs/architecture.md)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/architecture.md)**: Chi tiết bối cảnh hệ thống C4 Model, phân rã container/module, phân tích luồng dữ liệu và giải đáp 8 câu hỏi kiến trúc cốt lõi.
-2. 🎬 **[Kịch Bản Trình Diễn 10 Bước (docs/demo-scenario.md)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/demo-scenario.md)**: Kịch bản demo từng bước chuẩn theo tài liệu giảng viên từ Market Live $\rightarrow$ AI Search $\rightarrow$ Leaderboard $\rightarrow$ Backtest 12 cột $\rightarrow$ News NLP $\rightarrow$ AI Studio.
-3. 📝 **Danh Sách Các Quyết Định Kiến Trúc (Architecture Decision Records - ADRs)**:
+1. **[Tài Liệu Kiến Trúc Tổng Thể (docs/architecture.md)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/architecture.md)**: Chi tiết bối cảnh hệ thống C4 Model, phân rã container/module, phân tích luồng dữ liệu và giải đáp 8 câu hỏi kiến trúc cốt lõi.
+2. **[Kịch Bản Trình Diễn 10 Bước (docs/demo-scenario.md)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/demo-scenario.md)**: Kịch bản demo từng bước chuẩn theo tài liệu giảng viên từ Market Live -> AI Search -> Leaderboard -> Backtest 12 cột -> News NLP -> AI Studio.
+3. **Danh Sách Các Quyết Định Kiến Trúc (Architecture Decision Records - ADRs)**:
    - [ADR-001: Adoption of FastAPI & Async Architecture](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-001.md)
    - [ADR-002: Plugin Architecture for Strategy Discovery](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-002.md)
    - [ADR-003: Composite Strategy Pattern (AND/OR/WEIGHTED)](file:///c:/Users/admin/Documents/HCMUS/HK3%2025-26/KTPM/Project/docs/adr/ADR-003.md)

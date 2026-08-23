@@ -16,11 +16,11 @@ Hệ thống **Crypto Strategy Lab** hoạt động như một nền tảng th�
 
 ```mermaid
 graph TD
-    User["👤 Người Dùng (Trader / Analyst)"]
-    Binance["🏢 Binance Exchange (REST & WSS)"]
-    NewsSources["📰 Crypto News Providers (RSS / Web)"]
+    User["Người Dùng (Trader / Analyst)"]
+    Binance["Binance Exchange (REST & WSS)"]
+    NewsSources["Crypto News Providers (RSS / Web)"]
     
-    System["💻 Crypto Strategy Lab Platform<br/>(Core Engine, Backtester, AI Studio)"]
+    System["Crypto Strategy Lab Platform<br/>(Core Engine, Backtester, AI Studio)"]
     
     User <-->|HTTP REST & WebSocket| System
     System <-->|OHLCV REST & Tick WSS| Binance
@@ -196,7 +196,7 @@ Theo yêu cầu mục 40 của đồ án, hệ thống trả lời và giải qu
 | :--- | :--- | :--- |
 | **1** | **Strategy mới (như MACD) được thêm như thế nào? Cần sửa component nào?** | Chỉ cần tạo file `macd.py` kế thừa `BaseStrategy`, cài đặt hàm `generate_signals()` và gọi `strategy_registry.register(MACDStrategy)`. **Không cần sửa bất kỳ dòng code nào** trong Controller, Backtester, Evaluator, Leaderboard hay Frontend. |
 | **2** | **Thêm Search Algorithm mới (từ Random sang Genetic) có ảnh hưởng Backtester không?** | **Hoàn toàn không**. `GeneticSearch` và `RandomSearch` chỉ sinh ra các `CandidateStrategy`. `BacktestEvaluator` nhận candidate và thực thi độc lập, không quan tâm candidate được sinh ra từ thuật toán nào. |
-| **3** | **Thêm Market Data Provider mới (Binance $\rightarrow$ OKX, Bybit) có phải sửa Frontend không?** | **Không phải sửa Frontend**. `BinanceAdapter` và `OKXAdapter` đều cài đặt chung `IExchangeAdapter` và chuẩn hóa về đối tượng `Candle`. Frontend chỉ giao tiếp với Backend API qua chuẩn dữ liệu thống nhất. |
+| **3** | **Thêm Market Data Provider mới (Binance -> OKX, Bybit) có phải sửa Frontend không?** | **Không phải sửa Frontend**. `BinanceAdapter` và `OKXAdapter` đều cài đặt chung `IExchangeAdapter` và chuẩn hóa về đối tượng `Candle`. Frontend chỉ giao tiếp với Backend API qua chuẩn dữ liệu thống nhất. |
 | **4** | **Nếu số backtest tăng từ 100 lên 100.000 thì kiến trúc scale ra sao?** | Hệ thống sử dụng kiến trúc **Producer-Consumer với Celery Worker Pool và Redis Job Queue**. Các tác vụ backtest được đẩy vào hàng đợi và phân phối đều cho $N$ background workers chạy song song trên nhiều CPU/máy chủ. |
 | **5** | **Nếu News Service bị lỗi thì Chart có còn chạy không?** | **Vẫn chạy bình thường 100%**. News Service và Market Data Service là 2 module độc lập (Loose Coupling). Lỗi crawl tin tức được bắt gọn và cách ly, không ảnh hưởng đến luồng WebSocket nến của Chart. |
 | **6** | **Nếu Sentiment Model thay đổi (từ FinBERT sang GPT-4) thì Strategy Engine có bị ảnh hưởng không?** | **Không bị ảnh hưởng**. `SentimentService` cung cấp hàm chuẩn `analyze(text) -> SentimentResult(label, score)`. Dù thay đổi model ML bên dưới, kết quả trả về cho `NewsSentimentStrategy` vẫn giữ nguyên interface. |
@@ -207,11 +207,11 @@ Theo yêu cầu mục 40 của đồ án, hệ thống trả lời và giải qu
 
 ## 6. Các Anti-Pattern Đã Được Loại Bỏ Hoàn Toàn
 
-1. ❌ **God Service**: Không dồn toàn bộ code vào một file. Hệ thống chia tách thành các Service chuyên trách: `MarketService`, `StrategyRegistry`, `BacktestEvaluator`, `LeaderboardService`, `SmartCrawler`, `SentimentService`.
-2. ❌ **Hard-coded Strategy**: Không dùng các khối lệnh `if strategy == 'MA' elif ...`. Toàn bộ chiến lược được quản lý động qua `StrategyRegistry` và `CompositeStrategy`.
-3. ❌ **Frontend chứa Business Logic**: Toàn bộ logic phân tích kỹ thuật, tính toán tín hiệu, giả lập lệnh, trừ phí, slippage 5bps và chấm điểm được thực thi 100% ở Backend. Frontend chỉ đảm nhận hiển thị UI/UX.
-4. ❌ **Strategy truy cập trực tiếp Database**: Các chiến lược giao dịch là pure logic functions nhận DataFrame nến và trả về tín hiệu, hoàn toàn không dính líu đến SQL/Database.
-5. ❌ **Crawler phụ thuộc chặt vào ML**: Bộ thu thập dữ liệu (Crawler) chỉ chịu trách nhiệm lấy HTML và lưu schema tag; việc chấm điểm cảm xúc do `SentimentService` phụ trách riêng biệt.
+1. **God Service**: Không dồn toàn bộ code vào một file. Hệ thống chia tách thành các Service chuyên trách: `MarketService`, `StrategyRegistry`, `BacktestEvaluator`, `LeaderboardService`, `SmartCrawler`, `SentimentService`.
+2. **Hard-coded Strategy**: Không dùng các khối lệnh `if strategy == 'MA' elif ...`. Toàn bộ chiến lược được quản lý động qua `StrategyRegistry` và `CompositeStrategy`.
+3. **Frontend chứa Business Logic**: Toàn bộ logic phân tích kỹ thuật, tính toán tín hiệu, giả lập lệnh, trừ phí, slippage 5bps và chấm điểm được thực thi 100% ở Backend. Frontend chỉ đảm nhận hiển thị UI/UX.
+4. **Strategy truy cập trực tiếp Database**: Các chiến lược giao dịch là pure logic functions nhận DataFrame nến và trả về tín hiệu, hoàn toàn không dính líu đến SQL/Database.
+5. **Crawler phụ thuộc chặt vào ML**: Bộ thu thập dữ liệu (Crawler) chỉ chịu trách nhiệm lấy HTML và lưu schema tag; việc chấm điểm cảm xúc do `SentimentService` phụ trách riêng biệt.
 
 ---
 

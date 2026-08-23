@@ -12,6 +12,7 @@ from src.infrastructure.adapters.binance_adapter import BinanceAdapter
 from src.services.search.random_search import RandomSearch
 from src.services.search.genetic_search import GeneticSearch
 from src.services.search.continuous_loop import ContinuousSearchLoop
+from src.infrastructure.message_broker.event_bus import event_bus, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ adapter = BinanceAdapter()
 # Redis client for cross-worker job state storage
 # Falls back to None (in-process dict) if Redis is unavailable
 _redis_client = None
-_active_searches_local: Dict[str, Any] = {}      # Fallback RAM dict
+_active_engines: Dict[str, Any] = {}             # RAM engine instances
+_active_searches_local: Dict[str, Any] = {}      # Fallback RAM dict states
 _active_loops_local: Dict[str, ContinuousSearchLoop] = {}
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -38,7 +40,14 @@ async def _get_redis():
         return _redis_client
     try:
         import redis.asyncio as aioredis
-        client = aioredis.from_url(REDIS_URL, decode_responses=True)
+        pool = aioredis.ConnectionPool.from_url(
+            REDIS_URL,
+            max_connections=10,
+            decode_responses=True,
+            socket_timeout=15,
+            socket_connect_timeout=5
+        )
+        client = aioredis.Redis(connection_pool=pool)
         await client.ping()
         _redis_client = client
         logger.info("SearchRouter connected to Redis for job state storage.")
@@ -50,26 +59,29 @@ async def _get_redis():
 
 async def _set_job_state(job_id: str, state: dict):
     """Persist job state to Redis (or local dict as fallback)."""
+    _active_searches_local[job_id] = state
     r = await _get_redis()
     if r:
         try:
             await r.set(f"search:job:{job_id}:state", json.dumps(state), ex=JOB_TTL)
-            return
         except Exception as e:
             logger.warning(f"Redis set_job_state failed ({e}), using local dict.")
-    _active_searches_local[job_id] = state
 
 
 async def _get_job_state(job_id: str) -> Optional[dict]:
     """Retrieve job state from Redis (or local dict as fallback)."""
+    local = _active_searches_local.get(job_id)
+    if local and isinstance(local, dict):
+        return local
     r = await _get_redis()
     if r:
         try:
             raw = await r.get(f"search:job:{job_id}:state")
-            return json.loads(raw) if raw else None
+            if raw:
+                return json.loads(raw)
         except Exception as e:
             logger.warning(f"Redis get_job_state failed ({e}), using local dict.")
-    return _active_searches_local.get(job_id)
+    return local if isinstance(local, dict) else None
 
 
 # ------------------------------------------------------------------ #
@@ -86,6 +98,8 @@ class SearchRequest(BaseModel):
     population_size: int = 20
     generations: int = 5
     mutation_rate: float = 0.1
+    allowed_strategy_ids: Optional[List[str]] = None
+    allowed_logics: Optional[List[str]] = None
 
 class SearchStartResponse(BaseModel):
     job_id: str
@@ -120,31 +134,47 @@ class LoopStartRequest(BaseModel):
 
 
 # ------------------------------------------------------------------ #
-#  Background runner helpers
+#  Background task runner
 # ------------------------------------------------------------------ #
 
-async def _run_search_background(engine, job_id: str, search_kwargs: dict):
+async def _run_search_background(
+    engine: Any,
+    job_id: str,
+    search_kwargs: dict
+):
     """
-    Run a search engine in the background and persist state to Redis
-    so any worker can query progress via GET /status.
+    Run search in background, updating Redis state so any worker can read it.
     """
     try:
-        await _set_job_state(job_id, {"status": "running", "progress": 0.0,
-                                       "evaluated": 0, "total": 0,
-                                       "results_count": 0, "best_score": 0.0,
-                                       "time_elapsed": 0.0, "results": []})
-        await asyncio.to_thread(engine.search, **search_kwargs)
+        init_st = {
+            "job_id": job_id,
+            "status": "running", "progress": 0.0,
+            "evaluated": 0, "total": search_kwargs.get("n_candidates", 100),
+            "results_count": 0, "best_score": 0.0,
+            "time_elapsed": 0.0, "results": []
+        }
+        await _set_job_state(job_id, init_st)
+        await _set_job_state("latest", init_st)
+
+        await engine.async_search(**search_kwargs)
 
         # Persist final state
         st = engine.state.to_dict()
+        st["job_id"] = job_id
         st["results"] = [r.to_dict() for r in engine.state.results]
         await _set_job_state(job_id, st)
+        await _set_job_state("latest", st)
     except Exception as exc:
         logger.exception(f"Background search job {job_id} failed: {exc}")
-        await _set_job_state(job_id, {"status": "error", "progress": 0.0,
-                                       "evaluated": 0, "total": 0,
-                                       "results_count": 0, "best_score": 0.0,
-                                       "time_elapsed": 0.0, "results": []})
+        err_st = {
+            "job_id": job_id,
+            "status": "error", "progress": 0.0,
+            "evaluated": 0, "total": 0,
+            "results_count": 0, "best_score": 0.0,
+            "time_elapsed": 0.0, "results": []
+        }
+        await _set_job_state(job_id, err_st)
+        await _set_job_state("latest", err_st)
 
 
 # ------------------------------------------------------------------ #
@@ -162,7 +192,11 @@ async def start_search(request: SearchRequest, background_tasks: BackgroundTasks
         job_id = str(uuid.uuid4())[:8]
 
         if request.algorithm == "genetic":
-            engine = GeneticSearch(registry, adapter)
+            engine = GeneticSearch(
+                registry, adapter,
+                allowed_ids=request.allowed_strategy_ids,
+                allowed_logics=request.allowed_logics
+            )
             search_kwargs = dict(
                 symbol=request.symbol, timeframe=request.timeframe,
                 limit=request.limit, population_size=request.population_size,
@@ -170,15 +204,23 @@ async def start_search(request: SearchRequest, background_tasks: BackgroundTasks
                 top_k=request.top_k,
             )
         else:
-            engine = RandomSearch(registry, adapter)
+            engine = RandomSearch(
+                registry, adapter,
+                allowed_ids=request.allowed_strategy_ids,
+                allowed_logics=request.allowed_logics
+            )
             search_kwargs = dict(
                 symbol=request.symbol, timeframe=request.timeframe,
                 limit=request.limit, n_candidates=request.n_candidates,
                 top_k=request.top_k,
             )
 
-        # Keep in-process reference for same-worker status polling
-        _active_searches_local[job_id] = engine
+        # Set job id on engine
+        setattr(engine, "_job_id", job_id)
+
+        # Keep in-process reference for same-worker status polling & stopping
+        _active_engines[job_id] = engine
+        _active_engines["latest"] = engine
 
         # Launch async background task (persists state to Redis)
         background_tasks.add_task(_run_search_background, engine, job_id, search_kwargs)
@@ -195,6 +237,8 @@ async def start_search(request: SearchRequest, background_tasks: BackgroundTasks
                 "population_size": request.population_size,
                 "generations": request.generations,
                 "mutation_rate": request.mutation_rate,
+                "allowed_strategy_ids": request.allowed_strategy_ids,
+                "allowed_logics": request.allowed_logics,
             }
         )
     except Exception as e:
@@ -206,24 +250,46 @@ async def start_search(request: SearchRequest, background_tasks: BackgroundTasks
 async def get_search_status(job_id: Optional[str] = None):
     """
     Return current search state.
-    First checks in-process cache (same worker), then falls back to
-    Redis-persisted state (cross-worker compatible).
+    First checks in-process engine reference (fast path, same worker),
+    then falls back to Redis-persisted state (cross-worker compatible).
     """
     target_id = job_id or "latest"
 
-    # 1. Check in-process engine reference (fast path, same worker)
-    engine = _active_searches_local.get(target_id)
+    # 1. Check in-process engine reference
+    engine = _active_engines.get(target_id)
+    if not engine and target_id == "latest":
+        for k, v in _active_engines.items():
+            if hasattr(v, "state"):
+                engine = v
+                break
+
     if engine and hasattr(engine, "state"):
         st = engine.state.to_dict()
-        st["job_id"] = target_id
+        st["job_id"] = getattr(engine, "_job_id", target_id)
         return SearchStatusResponse(**st)
 
     # 2. Check Redis state (cross-worker path)
     state = await _get_job_state(target_id)
     if state:
+        st_val = state.get("status")
+        # Clean up stale/ghost state if server restarted
+        if st_val in ("running", "paused"):
+            has_active = any(
+                hasattr(e, "state") and getattr(e.state, "status", None) in ("running", "paused")
+                for e in _active_engines.values()
+            )
+            has_running_loop = any(
+                hasattr(l, "get_state") and l.get_state().get("status") == "running"
+                for l in _active_loops_local.values()
+            )
+            if not has_active and not has_running_loop:
+                st_val = "idle" if state.get("evaluated", 0) == 0 else "stopped"
+                state["status"] = st_val
+                await _set_job_state(target_id, state)
+
         return SearchStatusResponse(
-            job_id=target_id,
-            status=state.get("status", "unknown"),
+            job_id=state.get("job_id", target_id),
+            status=st_val or "unknown",
             progress=state.get("progress", 0.0),
             evaluated=state.get("evaluated", 0),
             total=state.get("total", 0),
@@ -240,18 +306,139 @@ async def get_search_status(job_id: Optional[str] = None):
     )
 
 
+class SearchStopRequest(BaseModel):
+    job_id: Optional[str] = None
+
+
+@router.post("/pause")
+async def pause_search(
+    body: Optional[SearchStopRequest] = None,
+    job_id: Optional[str] = None
+):
+    """Pause the running search loop without losing progress."""
+    target_id = (body.job_id if body and body.job_id else None) or job_id or "latest"
+    engine = _active_engines.get(target_id)
+    if not engine:
+        for k, v in _active_engines.items():
+            if hasattr(v, "state") and v.state.status == "running":
+                engine = v
+                break
+
+    if engine and hasattr(engine, "pause"):
+        engine.pause()
+        st = engine.state.to_dict()
+        st["job_id"] = getattr(engine, "_job_id", target_id)
+        await _set_job_state(target_id, st)
+        await _set_job_state("latest", st)
+        return {"message": "Search paused."}
+
+    return {"message": "No running search job found to pause."}
+
+
+@router.post("/resume")
+async def resume_search(
+    body: Optional[SearchStopRequest] = None,
+    job_id: Optional[str] = None
+):
+    """Resume a paused search loop."""
+    target_id = (body.job_id if body and body.job_id else None) or job_id or "latest"
+    engine = _active_engines.get(target_id)
+    if not engine:
+        for k, v in _active_engines.items():
+            if hasattr(v, "state") and v.state.status == "paused":
+                engine = v
+                break
+
+    if engine and hasattr(engine, "resume"):
+        engine.resume()
+        st = engine.state.to_dict()
+        st["job_id"] = getattr(engine, "_job_id", target_id)
+        await _set_job_state(target_id, st)
+        await _set_job_state("latest", st)
+        return {"message": "Search resumed."}
+
+    return {"message": "No paused search job found to resume."}
+
+
 @router.post("/stop")
-async def stop_search(job_id: Optional[str] = None):
-    """Signal the running search to stop after the current iteration."""
-    target_id = job_id or "latest"
-    engine = _active_searches_local.get(target_id)
-    if not engine or engine.state.status != "running":
-        raise HTTPException(
-            status_code=400,
-            detail="No running search job found to stop.",
-        )
-    engine.stop()
-    return {"message": "Stop signal sent. Search will halt after the current candidate."}
+async def stop_search(
+    body: Optional[SearchStopRequest] = None,
+    job_id: Optional[str] = None
+):
+    """Signal the running search to stop, preserve results, and sync to leaderboard."""
+    target_id = (body.job_id if body and body.job_id else None) or job_id or "latest"
+    stopped_any = False
+
+    # 1. Check active engine instances
+    engine = _active_engines.get(target_id)
+    if not engine:
+        for k, v in _active_engines.items():
+            if hasattr(v, "state") and v.state.status in ("running", "paused"):
+                engine = v
+                break
+
+    if engine and hasattr(engine, "stop"):
+        engine.stop()
+        if hasattr(engine, "state"):
+            engine.state.status = "stopped"
+            st = engine.state.to_dict()
+            st["job_id"] = getattr(engine, "_job_id", target_id)
+            st["results"] = [r.to_dict() for r in engine.state.results]
+            await _set_job_state(target_id, st)
+            await _set_job_state("latest", st)
+
+            # Automatically sync top results to Leaderboard on stop
+            if engine.state.results:
+                for r in engine.state.results[:5]:
+                    event_bus.publish(
+                        EventType.BACKTEST_COMPLETED,
+                        {
+                            "strategy_name": r.candidate.format_label(),
+                            "config": r.candidate.to_dict(),
+                            "metrics": r.metrics
+                        }
+                    )
+        stopped_any = True
+
+    # 2. Also check continuous loop
+    main_loop = _active_loops_local.get("main_loop")
+    if main_loop and main_loop.get_state().get("status") == "running":
+        main_loop.stop()
+        stopped_any = True
+
+    if stopped_any:
+        return {"message": "Search stopped. Discovered results preserved and synced to Leaderboard."}
+    
+    return {"message": "Search is not currently running or already stopped."}
+
+
+@router.post("/reset")
+async def reset_search(
+    body: Optional[SearchStopRequest] = None,
+    job_id: Optional[str] = None
+):
+    """Reset search engine state and progress back to 0."""
+    target_id = (body.job_id if body and body.job_id else None) or job_id or "latest"
+    engine = _active_engines.get(target_id)
+    if engine and hasattr(engine, "reset"):
+        engine.reset()
+
+    _active_engines.clear()
+    
+    idle_st = {
+        "job_id": target_id,
+        "status": "idle",
+        "progress": 0.0,
+        "evaluated": 0,
+        "total": 0,
+        "results_count": 0,
+        "best_score": 0.0,
+        "time_elapsed": 0.0,
+        "results": []
+    }
+    await _set_job_state(target_id, idle_st)
+    await _set_job_state("latest", idle_st)
+    return {"message": "Search state has been reset to 0."}
 
 
 @router.get("/results", response_model=SearchResultsResponse)
@@ -260,8 +447,14 @@ async def get_search_results(job_id: Optional[str] = None):
     target_id = job_id or "latest"
 
     # In-process (same worker)
-    engine = _active_searches_local.get(target_id)
-    if engine:
+    engine = _active_engines.get(target_id)
+    if not engine and target_id == "latest":
+        for k, v in _active_engines.items():
+            if hasattr(v, "state"):
+                engine = v
+                break
+
+    if engine and hasattr(engine, "state"):
         return SearchResultsResponse(
             status=engine.state.status,
             results=[r.to_dict() for r in engine.state.results]

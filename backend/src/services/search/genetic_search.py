@@ -18,9 +18,14 @@ class GeneticSearch(RandomSearch):
     Inherits from RandomSearch to reuse evaluation and state management.
     """
     
-    def __init__(self, registry: StrategyRegistry, adapter: BinanceAdapter):
-        super().__init__(registry, adapter)
-        # self.generator is already initialized in super()
+    def __init__(
+        self,
+        registry: StrategyRegistry,
+        adapter: BinanceAdapter,
+        allowed_ids: Optional[List[str]] = None,
+        allowed_logics: Optional[List[str]] = None
+    ):
+        super().__init__(registry, adapter, allowed_ids=allowed_ids, allowed_logics=allowed_logics)
         
     async def async_search(
         self,
@@ -60,17 +65,28 @@ class GeneticSearch(RandomSearch):
                 # Evaluate Population
                 evaluated_population: List[SearchResult] = []
                 for candidate in population:
+                    while self._pause_flag and not self._stop_flag:
+                        self.state.status = "paused"
+                        await asyncio.sleep(0.2)
+
                     if self._stop_flag:
                         break
-                        
+
+                    if self.state.status == "paused":
+                        self.state.status = "running"
+
                     result = self._evaluate_candidate(candidate, df)
                     self.state.evaluated += 1
                     
                     if result is not None:
                         evaluated_population.append(result)
                         all_results.append(result)
+
+                    # Yield control so status polling updates in real time
+                    await asyncio.sleep(0.01)
                 
                 if self._stop_flag:
+                    self.state.status = "stopped"
                     break
                     
                 # Update Leaderboard
@@ -105,6 +121,18 @@ class GeneticSearch(RandomSearch):
                     next_population.append(child)
                 
                 population = next_population
+
+            # Automatically sync top results to Leaderboard on finish or stop
+            if self.state.results:
+                for r in self.state.results[:5]:
+                    event_bus.publish(
+                        EventType.BACKTEST_COMPLETED,
+                        {
+                            "strategy_name": r.candidate.format_label(),
+                            "config": r.candidate.to_dict(),
+                            "metrics": r.metrics
+                        }
+                    )
 
             if self.state.status == "running":
                 self.state.status = "completed"

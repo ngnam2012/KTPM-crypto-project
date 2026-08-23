@@ -46,10 +46,7 @@ class SearchState:
 
     def to_dict(self) -> dict:
         import time
-        elapsed = time.time() - self.start_time if self.start_time > 0 and self.status == "running" else 0
-        if self.status == "completed" or self.status == "stopped":
-            elapsed = 0 # Optional: store end time if we want to show total time
-            
+        elapsed = time.time() - self.start_time if self.start_time > 0 else 0
         best_score = self.results[0].overall_score if self.results else 0.0
 
         return {
@@ -58,8 +55,8 @@ class SearchState:
             "evaluated": self.evaluated,
             "total": self.total,
             "results_count": len(self.results),
-            "best_score": best_score,
-            "time_elapsed": elapsed,
+            "best_score": round(best_score, 4),
+            "time_elapsed": round(elapsed, 1),
         }
 
 
@@ -69,12 +66,19 @@ class RandomSearch:
     the results by a weighted overall score.
     """
 
-    def __init__(self, registry: StrategyRegistry, adapter: BinanceAdapter):
+    def __init__(
+        self,
+        registry: StrategyRegistry,
+        adapter: BinanceAdapter,
+        allowed_ids: Optional[List[str]] = None,
+        allowed_logics: Optional[List[str]] = None
+    ):
         self.registry = registry
         self.adapter = adapter
-        self.generator = StrategyGenerator(registry)
+        self.generator = StrategyGenerator(registry, allowed_ids=allowed_ids, allowed_logics=allowed_logics)
         self.state = SearchState()
         self._stop_flag = False
+        self._pause_flag = False
 
     # ------------------------------------------------------------------ #
     #  Public API
@@ -91,6 +95,7 @@ class RandomSearch:
         """Run a full random search asynchronously. Updates *self.state* in-place."""
         import time
         self._stop_flag = False
+        self._pause_flag = False
         self.state = SearchState(status="running", total=n_candidates, top_k=top_k, start_time=time.time())
 
         try:
@@ -108,9 +113,17 @@ class RandomSearch:
             all_results: List[SearchResult] = []
 
             for candidate in candidates:
+                # Handle pause
+                while self._pause_flag and not self._stop_flag:
+                    self.state.status = "paused"
+                    await asyncio.sleep(0.2)
+
                 if self._stop_flag:
                     self.state.status = "stopped"
                     break
+
+                if self.state.status == "paused":
+                    self.state.status = "running"
 
                 result = self._evaluate_candidate(candidate, df)
                 if result is not None:
@@ -121,6 +134,21 @@ class RandomSearch:
                 # Keep a running top_k for live polling
                 all_results.sort(key=lambda r: r.overall_score, reverse=True)
                 self.state.results = all_results[:top_k]
+
+                # Yield control to event loop so FastAPI status polling updates progress in real time
+                await asyncio.sleep(0.01)
+
+            # Automatically sync top results to Leaderboard on finish or stop
+            if self.state.results:
+                for r in self.state.results[:5]:
+                    event_bus.publish(
+                        EventType.BACKTEST_COMPLETED,
+                        {
+                            "strategy_name": r.candidate.format_label(),
+                            "config": r.candidate.to_dict(),
+                            "metrics": r.metrics
+                        }
+                    )
 
             if self.state.status == "running":
                 self.state.status = "completed"
@@ -151,9 +179,27 @@ class RandomSearch:
         except RuntimeError:
             return asyncio.run(self.async_search(symbol, timeframe, limit, n_candidates, top_k))
 
+    def pause(self):
+        """Pause search loop."""
+        self._pause_flag = True
+        self.state.status = "paused"
+
+    def resume(self):
+        """Resume paused search loop."""
+        self._pause_flag = False
+        self.state.status = "running"
+
     def stop(self):
         """Signal the running search to stop after the current iteration."""
         self._stop_flag = True
+        self._pause_flag = False
+        self.state.status = "stopped"
+
+    def reset(self):
+        """Reset search state to idle and clear results."""
+        self._stop_flag = True
+        self._pause_flag = False
+        self.state = SearchState(status="idle")
 
 
     # ------------------------------------------------------------------ #
@@ -176,7 +222,7 @@ class RandomSearch:
                 inst = instances[0]
                 signals = inst.generate_signals(df, candidate.params.get(inst.id, {}))
             else:
-                composite = CompositeStrategy(instances, logic=candidate.logic)
+                composite = CompositeStrategy(instances, logic=candidate.logic, weights=candidate.weights)
                 signals = composite.generate_signals(df, candidate.params)
 
             # Evaluate via BacktestEvaluator
@@ -188,23 +234,22 @@ class RandomSearch:
             sharpe = self._compute_sharpe(df, signals)
             metrics["sharpe_ratio"] = sharpe
 
+            strat_name = candidate.format_label()
+
             # Compute overall score
             score = self._compute_score(metrics)
             
-            # Push to leaderboard
-            if len(instances) == 1:
-                strat_name = instances[0].name
-            else:
-                strat_name = composite.name
-                
-            event_bus.publish(
-                EventType.BACKTEST_COMPLETED,
-                {
-                    "strategy_name": strat_name,
-                    "config": candidate.to_dict(),
-                    "metrics": metrics
-                }
-            )
+            # Push to leaderboard only for new best performers to prevent flooding EventBus/Redis
+            current_best = self.state.results[0].overall_score if self.state.results else 0.0
+            if score > current_best and score > 0.1:
+                event_bus.publish(
+                    EventType.BACKTEST_COMPLETED,
+                    {
+                        "strategy_name": strat_name,
+                        "config": candidate.to_dict(),
+                        "metrics": metrics
+                    }
+                )
 
             return SearchResult(
                 candidate=candidate,

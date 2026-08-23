@@ -16,7 +16,8 @@ import { getDeviceTimezoneOffset } from '../../shared/lib/timezone';
 export interface TradingChartProps {
   symbol: string;
   initialTimeframe: string;
-  autoSignals?: boolean; // Enable automatic technical LONG/SHORT/EXIT markers
+  autoSignals?: boolean;
+  enableLiveStream?: boolean;
 }
 
 export interface TradingChartHandle {
@@ -25,6 +26,7 @@ export interface TradingChartHandle {
   setIndicatorLines: (lines: { name: string, data: any[] }[]) => void;
   highlightTrade: (entryTime: number, exitTime: number) => void;
   fitContent?: () => void;
+  clearAll?: () => void;
 }
 
 interface OHLCV {
@@ -47,8 +49,8 @@ interface FormattedCandle {
 
 export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({ 
   symbol, 
-  initialTimeframe, 
-  autoSignals = true 
+  initialTimeframe,
+  enableLiveStream = true
 }, ref) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
@@ -59,7 +61,6 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
   const [latestPrice, setLatestPrice] = useState<number | null>(null);
   const [priceChangePct, setPriceChangePct] = useState<number>(0);
   const [ma20Value, setMa20Value] = useState<number | null>(null);
-  const [activeSignal, setActiveSignal] = useState<'BUY' | 'SELL' | 'HOLD'>('HOLD');
 
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -67,10 +68,10 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const markersPluginRef = useRef<any>(null);
 
-  // Store externally supplied or calculated markers to restore across timeframe switches
+  // Store externally supplied backtest markers to restore across timeframe switches
   const customMarkersRef = useRef<any[] | null>(null);
 
-  const { isConnected, lastCandle } = useWebSocket(symbol, currentTimeframe);
+  const { isConnected, lastCandle } = useWebSocket(symbol, enableLiveStream ? currentTimeframe : '');
 
   // Helper: compute SMA 20
   const computeSMA = (data: FormattedCandle[], period: number = 20) => {
@@ -98,119 +99,6 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
     }));
   };
 
-  // Helper: Generate technical LONG / SHORT / EXIT markers if no custom markers are provided
-  const generateLiveSignals = (data: FormattedCandle[]): any[] => {
-    if (data.length < 25) return [];
-    const markers: any[] = [];
-    let currentPosition: 'LONG' | 'SHORT' | null = null;
-    let entryPrice = 0;
-    let entryTime: number = 0;
-
-    for (let i = 20; i < data.length; i++) {
-      const c = data[i];
-      const prevC = data[i - 1];
-      const t = c.time as number;
-
-      // Simple 10/20 Exponential/Simple crossover & momentum detector
-      let sumFast = 0;
-      let sumSlow = 0;
-      for (let j = i - 9; j <= i; j++) sumFast += data[j].close;
-      for (let j = i - 19; j <= i; j++) sumSlow += data[j].close;
-      const maFast = sumFast / 10;
-      const maSlow = sumSlow / 20;
-
-      let prevSumFast = 0;
-      let prevSumSlow = 0;
-      for (let j = i - 10; j <= i - 1; j++) prevSumFast += data[j].close;
-      for (let j = i - 20; j <= i - 1; j++) prevSumSlow += data[j].close;
-      const prevMaFast = prevSumFast / 10;
-      const prevMaSlow = prevSumSlow / 20;
-
-      const isBullishCross = prevMaFast <= prevMaSlow && maFast > maSlow;
-      const isBearishCross = prevMaFast >= prevMaSlow && maFast < maSlow;
-
-      // LONG Entry
-      if (isBullishCross && currentPosition !== 'LONG') {
-        // If holding SHORT, exit first
-        if (currentPosition === 'SHORT') {
-          const profitPct = ((entryPrice - c.close) / entryPrice) * 100;
-          markers.push({
-            time: t,
-            position: 'belowBar',
-            color: profitPct >= 0 ? '#10B981' : '#F43F5E',
-            shape: 'arrowUp',
-            text: `EXIT SHORT (${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(2)}%)`
-          });
-        }
-
-        currentPosition = 'LONG';
-        entryPrice = c.close;
-        entryTime = t;
-        markers.push({
-          time: t,
-          position: 'belowBar',
-          color: '#10B981',
-          shape: 'arrowUp',
-          text: `▲ LONG Entry @ $${c.close.toLocaleString()}`
-        });
-      }
-      // SHORT Entry
-      else if (isBearishCross && currentPosition !== 'SHORT') {
-        // If holding LONG, exit first
-        if (currentPosition === 'LONG') {
-          const profitPct = ((c.close - entryPrice) / entryPrice) * 100;
-          markers.push({
-            time: t,
-            position: 'aboveBar',
-            color: profitPct >= 0 ? '#10B981' : '#F43F5E',
-            shape: 'arrowDown',
-            text: `EXIT LONG (${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(2)}%)`
-          });
-        }
-
-        currentPosition = 'SHORT';
-        entryPrice = c.close;
-        entryTime = t;
-        markers.push({
-          time: t,
-          position: 'aboveBar',
-          color: '#F43F5E',
-          shape: 'arrowDown',
-          text: `▼ SHORT Entry @ $${c.close.toLocaleString()}`
-        });
-      }
-      // Dynamic Take Profit / Stop Loss Exit
-      else if (currentPosition === 'LONG') {
-        const gainPct = ((c.close - entryPrice) / entryPrice) * 100;
-        if (gainPct >= 3.5 || gainPct <= -2.0) {
-          markers.push({
-            time: t,
-            position: 'aboveBar',
-            color: gainPct >= 0 ? '#10B981' : '#F43F5E',
-            shape: 'circle',
-            text: `EXIT (${gainPct >= 0 ? 'TP +' : 'SL '}${gainPct.toFixed(2)}%)`
-          });
-          currentPosition = null;
-        }
-      }
-      else if (currentPosition === 'SHORT') {
-        const gainPct = ((entryPrice - c.close) / entryPrice) * 100;
-        if (gainPct >= 3.5 || gainPct <= -2.0) {
-          markers.push({
-            time: t,
-            position: 'belowBar',
-            color: gainPct >= 0 ? '#10B981' : '#F43F5E',
-            shape: 'circle',
-            text: `EXIT (${gainPct >= 0 ? 'TP +' : 'SL '}${gainPct.toFixed(2)}%)`
-          });
-          currentPosition = null;
-        }
-      }
-    }
-
-    return markers;
-  };
-
   const applyMarkersToSeries = useCallback((markers: any[]) => {
     if (!candlestickSeriesRef.current) return;
 
@@ -226,24 +114,40 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
       }
       markersPluginRef.current.setMarkers(validMarkers);
     } catch (e) {
-      console.warn('Error rendering series markers:', e);
+      try {
+        markersPluginRef.current = createSeriesMarkers(candlestickSeriesRef.current);
+        markersPluginRef.current.setMarkers(validMarkers);
+      } catch (err2) {
+        console.warn('Error rendering series markers:', err2);
+      }
     }
   }, []);
 
   useImperativeHandle(ref, () => ({
+    clearAll: () => {
+      customMarkersRef.current = [];
+      setActiveMarkersCount(0);
+      try {
+        if (markersPluginRef.current) {
+          markersPluginRef.current.setMarkers([]);
+        }
+      } catch (e) {
+        console.warn('Error clearing markers:', e);
+      }
+    },
     setMarkers: (markers) => {
-      customMarkersRef.current = markers;
-      applyMarkersToSeries(markers);
+      customMarkersRef.current = markers || [];
+      applyMarkersToSeries(markers || []);
     },
     setCandles: (candles) => {
       if (candlestickSeriesRef.current && candles && candles.length > 0) {
         const formattedData: FormattedCandle[] = candles.map((item: any) => {
           let timeVal: number;
           if (typeof item.time === 'number') {
-            timeVal = item.time > 1e11 ? item.time / 1000 : item.time;
+            timeVal = item.time > 1e11 ? Math.floor(item.time / 1000) : Math.floor(item.time);
           } else {
             const isUTC = !item.timestamp?.includes('Z') && !item.timestamp?.includes('+');
-            timeVal = new Date(isUTC ? item.timestamp + 'Z' : item.timestamp).getTime() / 1000;
+            timeVal = Math.floor(new Date(isUTC ? item.timestamp + 'Z' : item.timestamp).getTime() / 1000);
           }
           return {
             time: timeVal as Time,
@@ -264,6 +168,14 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
         if (volumeSeriesRef.current) {
           volumeSeriesRef.current.setData(computeVolume(formattedData));
         }
+
+        if (formattedData.length > 0) {
+          const first = formattedData[0];
+          const last = formattedData[formattedData.length - 1];
+          setLatestPrice(last.close);
+          setPriceChangePct(((last.close - first.open) / first.open) * 100);
+        }
+
         if (chartRef.current) {
           chartRef.current.timeScale().fitContent();
         }
@@ -274,10 +186,10 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
     },
     highlightTrade: (entryTime: number, exitTime: number) => {
       if (chartRef.current) {
-        const duration = Math.max(exitTime - entryTime, 1800);
-        const buffer = duration * 0.4;
-        const from = Math.max(0, (entryTime - buffer)) as Time;
-        const to = (exitTime + buffer) as Time;
+        const duration = Math.max(exitTime - entryTime, 3600);
+        const buffer = Math.max(duration * 1.5, 7200);
+        const from = Math.max(0, Math.floor(entryTime - buffer)) as Time;
+        const to = Math.floor(exitTime + buffer) as Time;
         
         chartRef.current.timeScale().setVisibleRange({ from, to });
       }
@@ -311,19 +223,47 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
       height: chartContainerRef.current.clientHeight,
       localization: {
         timeFormatter: (timestamp: number) => {
-          return new Date(timestamp * 1000).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }) + ' ' + getDeviceTimezoneOffset();
+          const d = new Date(timestamp * 1000);
+          const month = d.toLocaleDateString('en-US', { month: 'short' });
+          const day = d.getDate().toString().padStart(2, '0');
+          const hh = d.getHours().toString().padStart(2, '0');
+          const mm = d.getMinutes().toString().padStart(2, '0');
+          return `${month} ${day}, ${hh}:${mm} ${getDeviceTimezoneOffset()}`;
         },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
         borderColor: 'rgba(148, 163, 184, 0.15)',
+        tickMarkFormatter: (time: Time, tickMarkType: number) => {
+          let timestamp: number;
+          if (typeof time === 'number') {
+            timestamp = time > 1e11 ? time / 1000 : time;
+          } else if (typeof time === 'string') {
+            timestamp = new Date(time).getTime() / 1000;
+          } else {
+            return '';
+          }
+          if (isNaN(timestamp)) return '';
+
+          const d = new Date(timestamp * 1000);
+          const hh = d.getHours().toString().padStart(2, '0');
+          const mm = d.getMinutes().toString().padStart(2, '0');
+          const day = d.getDate().toString().padStart(2, '0');
+          const month = (d.getMonth() + 1).toString().padStart(2, '0');
+
+          // tickMarkType: 0: Year, 1: Month, 2: DayOfMonth, 3: Time, 4: TimeWithSeconds
+          if (tickMarkType === 0) {
+            return d.getFullYear().toString();
+          }
+          if (tickMarkType === 1) {
+            return d.toLocaleDateString('en-US', { month: 'short' });
+          }
+          if (tickMarkType === 2) {
+            return `${day}/${month}`;
+          }
+          return `${hh}:${mm}`;
+        },
       },
       rightPriceScale: {
         borderColor: 'rgba(148, 163, 184, 0.15)',
@@ -408,20 +348,11 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
           const change = ((lastC.close - firstCandle.open) / firstCandle.open) * 100;
           setPriceChangePct(change);
 
-          // Render Visual Markers (Custom Backtest or Live Auto-Signals)
+          // Render Visual Markers only when custom backtest markers exist
           if (customMarkersRef.current && customMarkersRef.current.length > 0) {
             applyMarkersToSeries(customMarkersRef.current);
-          } else if (autoSignals) {
-            const liveSignals = generateLiveSignals(formattedData);
-            applyMarkersToSeries(liveSignals);
-
-            // Determine latest active signal
-            if (liveSignals.length > 0) {
-              const lastSig = liveSignals[liveSignals.length - 1];
-              if (lastSig.text.includes('LONG')) setActiveSignal('BUY');
-              else if (lastSig.text.includes('SHORT')) setActiveSignal('SELL');
-              else setActiveSignal('HOLD');
-            }
+          } else {
+            setActiveMarkersCount(0);
           }
         }
       } catch (error) {
@@ -444,7 +375,7 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
         console.error("Error disposing chart:", err);
       }
     };
-  }, [symbol, currentTimeframe, autoSignals, applyMarkersToSeries]);
+  }, [symbol, currentTimeframe, applyMarkersToSeries]);
 
   // Real-time tick update from WebSocket
   useEffect(() => {
@@ -503,17 +434,6 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
           </span>
         )}
 
-        {/* Active Signal Pill */}
-        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider font-mono shadow-sm ${
-          activeSignal === 'BUY'
-            ? 'bg-bullish/20 text-bullish-bright border border-bullish/40'
-            : activeSignal === 'SELL'
-            ? 'bg-bearish/20 text-bearish-bright border border-bearish/40'
-            : 'bg-bg-surface text-text-muted border border-border-subtle'
-        }`}>
-          {activeSignal}
-        </span>
-
         {/* WebSocket Connection Status */}
         {loading ? (
           <span className="text-[10px] text-text-muted animate-pulse font-mono">Loading...</span>
@@ -526,25 +446,25 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
         )}
       </div>
 
-      {/* Top Right Signal Legend Overlay */}
-      <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-2 bg-bg-panel/90 px-3 py-1.5 rounded-xl border border-border-subtle backdrop-blur-xl shadow-lg text-[11px] font-mono select-none">
-        <span className="flex items-center gap-1 text-bullish-bright font-bold">
-          <span>▲ LONG</span>
-        </span>
-        <span className="text-border-subtle">|</span>
-        <span className="flex items-center gap-1 text-bearish-bright font-bold">
-          <span>▼ SHORT</span>
-        </span>
-        <span className="text-border-subtle">|</span>
-        <span className="flex items-center gap-1 text-brand-400 font-medium">
-          <span>● EXIT (TP/SL)</span>
-        </span>
-        {activeMarkersCount > 0 && (
-          <span className="ml-1 px-2 py-0.2 rounded-full bg-brand-500/20 text-brand-400 font-bold border border-brand-500/40 text-[10px]">
-            {activeMarkersCount} Signals
+      {/* Top Right Signal Legend Overlay (Rendered only when active backtest trade markers exist) */}
+      {activeMarkersCount > 0 && (
+        <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-2 bg-bg-panel/90 px-3 py-1.5 rounded-xl border border-border-subtle backdrop-blur-xl shadow-lg text-[11px] font-mono select-none">
+          <span className="flex items-center gap-1 text-bullish-bright font-bold">
+            <span>▲ LONG</span>
           </span>
-        )}
-      </div>
+          <span className="text-border-subtle">|</span>
+          <span className="flex items-center gap-1 text-bearish-bright font-bold">
+            <span>▼ SHORT</span>
+          </span>
+          <span className="text-border-subtle">|</span>
+          <span className="flex items-center gap-1 text-brand-400 font-medium">
+            <span>● EXIT (TP/SL)</span>
+          </span>
+          <span className="ml-1 px-2 py-0.2 rounded-full bg-brand-500/20 text-brand-400 font-bold border border-brand-500/40 text-[10px]">
+            {activeMarkersCount} Backtest Trades
+          </span>
+        </div>
+      )}
 
       <div ref={chartContainerRef} className="flex-1 w-full" />
     </div>

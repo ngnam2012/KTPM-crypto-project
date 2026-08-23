@@ -16,7 +16,10 @@ import {
   AlertCircle, 
   Layers, 
   Sliders, 
-  ArrowRight,
+  BookOpen, 
+  X, 
+  RefreshCw, 
+  FolderOpen,
   Clock,
   Coins
 } from 'lucide-react';
@@ -54,6 +57,11 @@ interface ParsedStrategyData {
 export const StrategyStudioPage: React.FC = () => {
   const navigate = useNavigate();
   
+  // Library Modal State
+  const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
+  const [savedStrategies, setSavedStrategies] = useState<any[]>([]);
+  const [loadingLibrary, setLoadingLibrary] = useState<boolean>(false);
+
   // Inputs (Column 1)
   const [promptText, setPromptText] = useState<string>(
     "RSI < 30 and Close Price below Bollinger Lower Band (20, 2), Stop Loss 2%, Take Profit 4%"
@@ -180,7 +188,7 @@ export const StrategyStudioPage: React.FC = () => {
       if (!res.ok) throw new Error("Failed to extract article content.");
       const crawlData = await res.json();
 
-      const extractedPrompt = `${crawlData.title}: ${crawlData.content.slice(0, 300)}`;
+      const extractedPrompt = `${crawlData.title}\n\n${crawlData.content}`;
       setPromptText(extractedPrompt);
 
       // Auto trigger analysis
@@ -226,17 +234,95 @@ export const StrategyStudioPage: React.FC = () => {
           source_prompt: promptText
         })
       });
-      if (!res.ok) throw new Error("Failed to save strategy to library.");
-      setToast({ message: `Strategy '${libraryName}' saved to Library!`, type: 'success' });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Failed to save strategy to library.");
+      }
+      setToast({ message: `Chiến lược '${libraryName}' đã được lưu vào Thư viện thành công!`, type: 'success' });
       setTimeout(() => setToast(null), 3500);
     } catch (e: any) {
-      setToast({ message: e.message || "Library save error", type: 'error' });
+      setToast({ message: e.message || "Lỗi lưu thư viện", type: 'error' });
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
+
+  const handleDeleteFromLibrary = async (id: string, name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa chiến lược '${name}' khỏi thư viện?`)) return;
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/custom-strategies/saved/${id}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Không thể xóa chiến lược.");
+      }
+      setSavedStrategies(prev => prev.filter(s => s.id !== id));
+      setToast({ message: `Đã xóa chiến lược '${name}' khỏi Thư viện.`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (err: any) {
+      setToast({ message: err.message || "Lỗi khi xóa chiến lược", type: 'error' });
       setTimeout(() => setToast(null), 4000);
     }
   };
 
   const handleRunBacktestNow = () => {
-    navigate("/backtest");
+    navigate("/backtest", { state: { strategy: parsedData, autoRun: true } });
+  };
+
+  const handleOpenLibrary = async () => {
+    setIsLibraryOpen(true);
+    setLoadingLibrary(true);
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/custom-strategies/saved");
+      if (res.ok) {
+        const data = await res.json();
+        setSavedStrategies(data.saved_strategies || []);
+      }
+    } catch (err) {
+      console.error("Failed to load saved strategies", err);
+    } finally {
+      setLoadingLibrary(false);
+    }
+  };
+
+  const handleLoadFromLibrary = (strat: any) => {
+    const params = strat.params || {};
+    const schema = params.json_schema || {};
+    setParsedData({
+      id: strat.id,
+      name: strat.name,
+      version: strat.version || "1.0.0",
+      type: strat.type || "composite",
+      logic: params.logic || "AND",
+      tags: params.strategies ? params.strategies.map((s: any) => s.name || s.id) : [],
+      strategies: params.strategies || [],
+      description: strat.description || "",
+      prompt: strat.source_prompt || "",
+      long_conditions: schema.conditions?.long?.map((c: any) => c.condition || JSON.stringify(c)) || [],
+      short_conditions: schema.conditions?.short?.map((c: any) => c.condition || JSON.stringify(c)) || [],
+      risk_management: {
+        stop_loss: `Stop Loss: ${params.stop_loss_pct || 2}%`,
+        take_profit: `Take Profit: ${params.take_profit_pct || 4}%`,
+        stop_loss_pct: params.stop_loss_pct || 2,
+        take_profit_pct: params.take_profit_pct || 4
+      },
+      timeframe: schema.timeframe || "1h (Default)",
+      applicability: "All USDT Trading Pairs",
+      json_schema: schema,
+      validation: {
+        missing_required: "None",
+        logic_check: "Valid Logic",
+        supported_indicators: "All indicators supported",
+        status: "Loaded from Database Library"
+      }
+    });
+    if (strat.source_prompt) setPromptText(strat.source_prompt);
+    setLibraryName(strat.name);
+    setLibraryVersion(strat.version || "1.0.0");
+    setIsLibraryOpen(false);
+    setToast({ message: `Loaded '${strat.name}' from Library!`, type: 'success' });
+    setTimeout(() => setToast(null), 3000);
   };
 
   return (
@@ -262,10 +348,18 @@ export const StrategyStudioPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={handleOpenLibrary}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.2)] transition-all cursor-pointer"
+          >
+            <BookOpen size={15} className="text-amber-400" />
+            <span>Saved Strategy Library</span>
+          </button>
+
           <button
             onClick={() => navigate("/backtest")}
-            className="flex items-center gap-2 px-4 py-2 bg-bg-deep hover:bg-bg-surface border border-border-subtle rounded-xl text-xs font-semibold text-text-muted hover:text-text-main transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-bg-surface hover:bg-bg-hover border border-border-subtle hover:border-brand-500/40 rounded-xl text-xs font-semibold text-text-main transition-colors cursor-pointer"
           >
             <FlaskConical size={14} className="text-brand-400" />
             <span>Open Backtest Workbench</span>
@@ -285,11 +379,11 @@ export const StrategyStudioPage: React.FC = () => {
                 <Sparkles size={14} className="text-accent-purple" />
                 Strategy Prompt (Natural Language)
               </label>
-              <span className="text-[11px] text-text-muted font-mono">{promptText.length}/1000</span>
+              <span className="text-[11px] text-text-muted font-mono">{promptText.length}/4000</span>
             </div>
 
             <textarea
-              rows={6}
+              rows={7}
               value={promptText}
               onChange={(e) => setPromptText(e.target.value)}
               placeholder="e.g. RSI < 30 and Close below Bollinger Lower Band (20, 2), Stop Loss 2%, Take Profit 4%..."
@@ -539,6 +633,134 @@ export const StrategyStudioPage: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Saved Strategy Library Modal */}
+      {isLibraryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-bg-panel border border-border-subtle rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-border-subtle flex items-center justify-between bg-bg-surface/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  <BookOpen size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-text-main flex items-center gap-2">
+                    Saved Strategy Library
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-mono">
+                      {savedStrategies.length} Strategies
+                    </span>
+                  </h3>
+                  <p className="text-xs text-text-muted">
+                    Browse and load validated AI/Custom strategies saved in SQLite database.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleOpenLibrary}
+                  disabled={loadingLibrary}
+                  className="p-2 hover:bg-bg-surface rounded-xl text-text-muted hover:text-text-main transition-colors"
+                  title="Refresh library"
+                >
+                  <RefreshCw size={16} className={loadingLibrary ? "animate-spin text-brand-400" : ""} />
+                </button>
+                <button
+                  onClick={() => setIsLibraryOpen(false)}
+                  className="p-2 hover:bg-bg-surface rounded-xl text-text-muted hover:text-text-main transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3">
+              {loadingLibrary ? (
+                <div className="py-16 text-center text-xs text-text-muted flex flex-col items-center justify-center gap-3">
+                  <RefreshCw className="w-6 h-6 animate-spin text-brand-400" />
+                  <span>Loading saved strategy records...</span>
+                </div>
+              ) : savedStrategies.length === 0 ? (
+                <div className="py-16 text-center text-xs text-text-muted flex flex-col items-center justify-center gap-3">
+                  <FolderOpen className="w-10 h-10 text-text-dim" />
+                  <p className="font-semibold text-text-main">No saved strategies found yet.</p>
+                  <p className="text-[11px] text-text-dim max-w-sm">
+                    Generate trading rules using AI Prompt or Website extraction, then click "Save to Library".
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {savedStrategies.map((strat) => (
+                    <div
+                      key={strat.id}
+                      className="p-4 rounded-xl bg-bg-surface/60 hover:bg-bg-surface border border-border-subtle hover:border-amber-500/40 transition-all flex flex-col justify-between gap-3 group"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="text-xs font-bold text-text-main group-hover:text-amber-300 transition-colors truncate">
+                            {strat.name}
+                          </h4>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-bg-deep text-text-muted border border-border-subtle shrink-0">
+                            v{strat.version || '1.0.0'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-text-muted line-clamp-2 leading-relaxed">
+                          {strat.description || strat.source_prompt || 'Custom strategy configuration'}
+                        </p>
+                        {strat.created_at && (
+                          <div className="text-[10px] text-text-dim font-mono">
+                            Created: {new Date(strat.created_at).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-border-subtle/40">
+                        <button
+                          onClick={() => handleLoadFromLibrary(strat)}
+                          className="flex-1 py-1.5 px-3 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Check size={13} />
+                          <span>Load into Studio</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleLoadFromLibrary(strat);
+                            navigate("/backtest", { state: { strategy: strat, autoRun: true } });
+                          }}
+                          className="py-1.5 px-3 bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 text-brand-400 hover:text-brand-300 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          title="Load and Backtest"
+                        >
+                          <Play size={12} fill="currentColor" />
+                          <span>Backtest</span>
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteFromLibrary(strat.id, strat.name, e)}
+                          className="py-1.5 px-2.5 bg-bearish/10 hover:bg-bearish/25 border border-bearish/30 text-bearish-bright hover:text-white text-xs font-bold rounded-lg flex items-center justify-center transition-colors cursor-pointer"
+                          title="Xóa khỏi Thư viện"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-border-subtle bg-bg-surface/40 flex justify-end">
+              <button
+                onClick={() => setIsLibraryOpen(false)}
+                className="px-4 py-2 bg-bg-deep hover:bg-bg-surface border border-border-subtle rounded-xl text-xs font-semibold text-text-muted hover:text-text-main transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast notification */}
       {toast && (
