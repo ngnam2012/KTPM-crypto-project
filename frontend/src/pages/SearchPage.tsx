@@ -404,7 +404,7 @@ export const SearchPage: React.FC = () => {
                 </button>
                 <button 
                   onClick={handleReset}
-                  title="Reset to 0 (Xóa kết quả về ban đầu)"
+                  title="Reset to 0 (Clear results to initial state)"
                   className="px-3.5 flex items-center justify-center gap-1.5 bg-bg-deep hover:bg-bg-surface text-text-muted hover:text-text-main p-3 rounded-xl font-bold text-xs transition-all duration-200 border border-border-subtle cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -422,7 +422,7 @@ export const SearchPage: React.FC = () => {
                 </button>
                 <button 
                   onClick={handleStop}
-                  title="Dừng hẳn và lưu kết quả này"
+                  title="Stop search and keep current results"
                   className="px-4 flex items-center justify-center gap-1.5 bg-bearish/20 hover:bg-bearish text-bearish-bright hover:text-white p-3 rounded-xl font-bold text-xs transition-all duration-200 border border-bearish/40 cursor-pointer"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
@@ -430,7 +430,7 @@ export const SearchPage: React.FC = () => {
                 </button>
                 <button 
                   onClick={handleReset}
-                  title="Dừng và xóa về 0"
+                  title="Stop search and reset to 0"
                   className="px-3 flex items-center justify-center bg-bg-deep hover:bg-bg-surface text-text-muted hover:text-text-main p-3 rounded-xl font-bold text-xs transition-all duration-200 border border-border-subtle cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -447,7 +447,7 @@ export const SearchPage: React.FC = () => {
                 </button>
                 <button 
                   onClick={handleStop}
-                  title="Dừng hẳn và lưu kết quả này"
+                  title="Stop search and keep current results"
                   className="px-4 flex items-center justify-center gap-1.5 bg-bg-deep hover:bg-bearish hover:text-white text-text-muted p-3 rounded-xl font-bold text-xs transition-all duration-200 border border-border-subtle hover:border-bearish cursor-pointer"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
@@ -455,7 +455,7 @@ export const SearchPage: React.FC = () => {
                 </button>
                 <button 
                   onClick={handleReset}
-                  title="Dừng và xóa về 0"
+                  title="Stop search and reset to 0"
                   className="px-3 flex items-center justify-center bg-bg-deep hover:bg-bg-surface text-text-muted hover:text-text-main p-3 rounded-xl font-bold text-xs transition-all duration-200 border border-border-subtle cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
