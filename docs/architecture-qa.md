@@ -96,7 +96,7 @@ graph TB
     end
 
     subgraph "Data Stores"
-        SQLite[(" SQLite / PostgreSQL<br/><br/>7 tables: users,<br/>strategy_definitions,<br/>backtest_results,<br/>trade_records,<br/>leaderboard_entries,<br/>news_items,<br/>crawler_tag_schemas")]
+        SQLite[(" SQLite / PostgreSQL<br/><br/>8 tables: users, candles,<br/>strategy_definitions,<br/>backtest_results,<br/>trade_records,<br/>leaderboard_entries,<br/>news_items,<br/>crawler_tag_schemas")]
         Redis[(" Redis<br/><br/>EventBus Streams<br/>Leaderboard Hash<br/>Session Cache")]
     end
 
@@ -121,7 +121,7 @@ graph TB
 | **React SPA** | React 19 + Vite + TS | UI/UX, chart rendering, form submission |
 | **FastAPI Server** | Python + FastAPI + Uvicorn | REST API, WebSocket, business logic |
 | **Celery Workers** | Python + Celery | Background search tasks (scale-out) |
-| **SQLite/PostgreSQL** | SQLAlchemy ORM | Persistent storage (7 tables) |
+| **SQLite/PostgreSQL** | SQLAlchemy ORM | Persistent storage (8 tables) |
 | **Redis** | Redis 7+ | EventBus Streams, Leaderboard cache |
 
 ---
@@ -671,7 +671,7 @@ graph LR
     LB[" LeaderboardEntry<br/>score: 0.85<br/>id: abc-123"]
     BT[" BacktestResult<br/>symbol: BTC/USDT<br/>timeframe: 1h<br/>metrics_json: {...}<br/>overall_score: 0.85"]
     SD[" StrategyDefinition<br/>name: MA20/50 + RSI14<br/>type: composite<br/>version: 1.0.0<br/>params_json: {...}<br/>source_prompt: '...'"]
-    TR[" TradeRecords<br/>#1 LONG @ $95,200<br/>#2 SHORT @ $96,100<br/>...<br/>(12+ columns each)"]
+    TR[" TradeRecords<br/>#1 LONG @ $95,200<br/>#2 SHORT @ $96,100<br/>...<br/>(13 columns each)"]
     USER[" User<br/>username: trader01<br/>role: trader"]
     
     LB -->|"backtest_result_id (FK)"| BT
@@ -711,7 +711,7 @@ ORDER BY entry_time;
 | **Strategy nào?** | `strategy_definitions` | `name`, `type`, `version`, `params_json` | Tên, loại (single/composite), version, toàn bộ tham số JSON |
 | **Prompt gốc?** | `strategy_definitions` | `source_prompt` | Câu prompt NL gốc nếu tạo từ AI Studio |
 | **Backtest result?** | `backtest_results` | `symbol`, `timeframe`, `metrics_json`, `overall_score` | Kết quả định lượng: return, winrate, MDD, sharpe, profit factor |
-| **Chi tiết lệnh?** | `trade_records` | 12+ columns | Mỗi lệnh: direction, entry/exit time & price, SL, TP, fee, slippage, net profit |
+| **Chi tiết lệnh?** | `trade_records` | 13 columns | Mỗi lệnh: direction, entry/exit time & price, SL, TP, fee, slippage, net profit |
 | **Xếp hạng?** | `leaderboard_entries` | `score`, `rank`, `updated_at` | Điểm tổng hợp, thứ hạng, thời điểm cập nhật |
 
 ### 10.4. Entry ID Generation – Content-Addressable Hash
@@ -759,4 +759,4 @@ Giả sử trên Leaderboard thấy entry: **"MA20/50 + RSI14 [AND]"** với sco
 | 7 | 100K backtests scale | Celery + Redis + asyncio | Producer-Consumer + Horizontal Scale |
 | 8 | Failure isolation | Try/catch + fallback + graceful degrade | Bulkhead + Circuit Breaker |
 | 9 | Duplicate/retry/event order | MD5 idempotency + XACK + FIFO Streams | At-Least-Once + Idempotent Consumer |
-| 10 | Leaderboard provenance | FK chain + content hash + 12-col trades | Full Traceability + Reproducibility |
+| 10 | Leaderboard provenance | FK chain + content hash + 13-col trades | Full Traceability + Reproducibility |

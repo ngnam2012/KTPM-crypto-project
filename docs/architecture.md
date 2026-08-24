@@ -100,11 +100,16 @@ graph TD
 
 | Interface | File | Mô tả |
 |:---|:---|:---|
-| `IStrategy` | `interfaces.py` | Hợp đồng chuẩn: `id`, `name`, `description`, `default_params`, `generate_signals(df, params) → pd.Series` |
-| `IExchangeAdapter` | `adapters/base_exchange.py` | Hợp đồng kết nối sàn: `fetch_ohlcv(symbol, timeframe, limit) → DataFrame` |
-| `INewsProvider` | `news_interfaces.py` | Hợp đồng thu thập tin: `fetch_news(query, limit) → List[NewsItem]` |
+| `IStrategy` | `domain/interfaces.py` | Hợp đồng chuẩn: `id`, `name`, `description`, `default_params`, `generate_signals(df, params) → pd.Series` |
+| `INewsProvider` | `domain/news_interfaces.py` | Hợp đồng thu thập tin: `fetch_news(query, limit) → List[NewsItem]` |
 
 Các entity/dataclass: `NewsItem(id, title, content, source, url, published_at, sentiment_score, sentiment_label)`.
+
+**Infrastructure Ports** (nằm tại `infrastructure/adapters/`):
+
+| Interface | File | Mô tả |
+|:---|:---|:---|
+| `IExchangeAdapter` | `infrastructure/adapters/base_exchange.py` | Hợp đồng kết nối sàn: `fetch_ohlcv(symbol, timeframe, limit) → DataFrame` |
 
 ### 3.2. Strategy Plugin Architecture (`backend/src/strategies/`)
 
@@ -135,7 +140,7 @@ strategies/
   - Hạch toán chi phí: Phí giao dịch (mặc định 0.05%), Slippage (5bps = 0.05%).
 - **`TradeSimulator`**: Giả lập vào/thoát lệnh chi tiết cho cả LONG và SHORT:
   - Stop Loss %, Take Profit %, Trailing Stop %.
-  - Xuất 12+ cột chi tiết: STT, Pair, Direction, Entry/Exit Time & Price, Volume USD, SL, TP, Fee, Slippage, Net Profit.
+  - Xuất 13 cột chi tiết: STT, Pair, Direction, Entry/Exit Time & Price, Volume USD, SL, TP, Fee, Slippage, Net Profit.
 
 ### 3.4. AI Search Engine (`backend/src/services/search/`)
 
@@ -147,7 +152,12 @@ strategies/
 | `tasks.py` | Celery Task | Worker pool cho phép scale search ra nhiều process/máy chủ |
 
 - **Vòng lặp ngầm**: Hỗ trợ Pause / Resume / Stop. `asyncio.sleep(0.01)` yield control cho event loop.
-- **Overall Score**: $0.4 \times \tanh(return) + 0.3 \times winrate + 0.2 \times (1 + mdd) + 0.1 \times \tanh(sharpe/3)$
+- **Overall Score Formula & Rationale**: 
+  - Công thức: $0.4 \times \tanh(return) + 0.3 \times winrate + 0.2 \times (1 + mdd) + 0.1 \times \tanh(sharpe/3)$
+  - **Lý luận (Design Rationale)**: 
+    - `tanh()` được dùng để chuẩn hóa (normalize) các giá trị lợi nhuận siêu lớn về khoảng $[-1, 1]$, ngăn chặn một strategy có return đột biến (nhưng cực kỳ rủi ro) làm lu mờ hoàn toàn các thông số khác.
+    - Trọng số lớn nhất (40%) dành cho `return` vì đây là mục tiêu chính của giao dịch.
+    - `(1 + mdd)`: Vì Maximum Drawdown luôn $\le 0$, biểu thức này tạo ra giá trị $\le 1$ (ví dụ MDD -6% $\rightarrow$ 0.94), qua đó phạt tự động các strategy có MDD sâu mà không cần dùng hàm `abs()`.
 
 ### 3.5. AI Strategy Studio (`backend/src/services/ai/`)
 
@@ -170,6 +180,11 @@ strategies/
 1. **Redis Streams** (production): XADD/XREADGROUP/XACK – persistent, at-least-once delivery, consumer groups.
 2. **In-process** (fallback/dev): Fire-and-forget Pub/Sub khi Redis không available.
 
+**Design Rationale (Logic Fallback)**:
+Hệ thống tự động quyết định mode khi khởi động:
+`Startup → Ping Redis → Nếu OK: chọn Redis Streams → Nếu lỗi: chọn In-process`.
+- *Trade-off*: In-process mode có thể gây mất tin nhắn (data loss) nếu worker crash giữa chừng vì không có cơ chế ACK, nhưng đảm bảo **hệ thống vẫn hoạt động (resilient)** ở môi trường dev local hoặc khi cluster Redis gặp sự cố, thay vì sập toàn bộ backend.
+
 Event types: `BACKTEST_COMPLETED`, `LEADERBOARD_UPDATED`, `STRATEGY_GENERATED`, `NEWS_COLLECTED`, `SENTIMENT_ANALYZED`, `MARKET_PRICE_UPDATED`.
 
 ### 3.8. Leaderboard Service (`services/leaderboard/`)
@@ -181,9 +196,18 @@ Three-tier storage strategy:
 
 ### 3.9. Authentication & Security (`core/security.py`, `api/v1/auth_router.py`)
 
-- **JWT** (HMAC-SHA256, 24h expiry), **PBKDF2-HMAC-SHA256** password hashing (32-byte salt, 100K iterations).
+- **JWT** (HMAC-SHA256, 24h expiry), **PBKDF2-HMAC-SHA256** password hashing (16-byte salt, 100K iterations).
 - **RBAC**: `trader`, `analyst`, `admin`.
 - **FastAPI Dependencies**: `get_current_user`, `get_optional_user`.
+
+### 3.10. Frontend Architecture (React 19 + TypeScript + Vite)
+
+- **State Management & Auth**: Sử dụng React Context API (`AuthContext.tsx`) để bọc toàn bộ app, cung cấp trạng thái đăng nhập và thông tin user xuống các component con mà không bị prop drilling.
+- **API Communication**: `apiClient.ts` sử dụng Axios instance với Interceptors tự động đính kèm `Bearer JWT` vào header của mọi request gửi đi, và tự động xử lý lỗi 401 Unauthorized để logout.
+- **Realtime Connectivity**: 
+  - `useWebSocket.ts`: Custom hook quản lý connection vòng đời của market stream (tự động reconnect, phân rã message thành candlestick).
+  - `useEventsWebSocket.ts`: Hook nhận các system events (leaderboard update, search progress) thông qua Pub/Sub.
+- **Component Pattern**: Tách biệt rõ "Smart Components" (Pages: fetch data, quản lý state) và "Dumb Components" (Charts, Tables: chỉ nhận props và render UI).
 
 ---
 
@@ -230,7 +254,7 @@ sequenceDiagram
     API->>Engine: generate_signals(DataFrame, params)
     Engine-->>API: Buy/Sell Signal Series
     API->>Sim: simulate(signals, capital, fee, slippage, SL, TP)
-    Sim-->>API: 12+ Column Trades & Financial Metrics
+    Sim-->>API: 13 Column Trades & Financial Metrics
     API->>Bus: publish(BACKTEST_COMPLETED, {name, config, metrics})
     Bus-->>LB: on_backtest_completed(data)
     LB->>LB: compute_score() & check improvement
@@ -271,6 +295,22 @@ sequenceDiagram
     API-->>UI: {progress, evaluated, best_score, results[]}
 ```
 
+### 4.4. Tổng hợp API Endpoints & WebSocket Channels
+
+| Phương thức | Endpoint | Chức năng chính |
+|:---|:---|:---|
+| `POST` | `/api/v1/auth/login` | Xác thực user, trả về JWT Token |
+| `GET` | `/api/v1/strategies/` | Lấy danh sách các strategy plugin đã đăng ký |
+| `POST` | `/api/v1/backtest/run` | Chạy backtest nhanh (chỉ trả về metrics) |
+| `POST` | `/api/v1/backtest/run-with-trades` | Backtest chi tiết, trả về mảng 13 cột trade records |
+| `POST` | `/api/v1/search/start` | Kích hoạt AI Search Engine chạy ngầm (Random/GA) |
+| `GET` | `/api/v1/search/status` | Polling trạng thái tiến trình search hiện tại |
+| `GET` | `/api/v1/leaderboard/` | Lấy danh sách Top-K strategies từ hệ thống |
+| `GET` | `/api/v1/news/` | Lấy danh sách tin tức crypto liên quan |
+| `POST` | `/api/v1/ai/parse-strategy` | Trích xuất JSON rules từ prompt tự nhiên |
+| `WS` | `/ws/market` | Kênh WebSocket stream giá và nến realtime |
+| `WS` | `/ws/events` | Kênh WebSocket broadcast system events |
+
 ---
 
 ## 5. Cấu Trúc Database (Data Model)
@@ -288,8 +328,23 @@ erDiagram
         string username UK
         string email UK
         string hashed_password
+        string full_name "nullable"
         string role "trader|analyst|admin"
+        boolean is_active "default true"
         datetime created_at
+        datetime updated_at
+    }
+
+    candles {
+        string id PK
+        string symbol
+        string timeframe
+        datetime timestamp
+        float open
+        float high
+        float low
+        float close
+        float volume
     }
 
     strategy_definitions {
@@ -396,6 +451,8 @@ KTPM-crypto-project/
               strategy_generator.py    ← StrategyCandidate + PARAM_RANGES
               random_search.py         ← RandomSearch (Monte Carlo)
               genetic_search.py        ← GeneticSearch (GA)
+              continuous_loop.py       ← ContinuousLoop (iterative GA search)
+              celery_app.py            ← Celery app configuration
               tasks.py                 ← Celery task wrapper
            leaderboard/
               leaderboard_service.py   ← 3-tier: Redis + DB + InProc
@@ -412,9 +469,10 @@ KTPM-crypto-project/
               base_exchange.py         ← IExchangeAdapter (ABC)
               binance_adapter.py       ← BinanceAdapter (Async CCXT)
               binance_ws_adapter.py    ← Realtime WebSocket adapter
+              rss_news_provider.py     ← RSSNewsProvider (INewsProvider impl)
            database/
               config.py                ← SQLAlchemy engine & session
-              models.py                ← ORM models (7 tables)
+              models.py                ← ORM models (8 tables)
               repositories.py          ← Repository pattern (CRUD)
            message_broker/
                events.py                ← EventType enum (6 events)
@@ -433,6 +491,9 @@ KTPM-crypto-project/
  frontend/
     src/
         App.tsx                           ← Router + Layout
+        main.tsx                          ← React entry point
+        index.css                         ← Global CSS design tokens
+        App.css                           ← App-level styles
         pages/
            Dashboard.tsx                ← Market Dashboard (4 charts)
            BacktestPage.tsx             ← Backtest Workbench
@@ -442,10 +503,19 @@ KTPM-crypto-project/
            NewsPage.tsx                 ← News Feed & Sentiment
         components/
             Charts/TradingChart.tsx       ← TradingView Lightweight Charts
-            TradeDetailTable.tsx          ← 12-column trade table
+            TradeDetailTable.tsx          ← 13-column trade table
             SentimentSummary.tsx          ← Sentiment gauge
-            Auth/                         ← Login/Register/UserDropdown
-            Layout/                       ← Sidebar, Navbar
+            Auth/AuthModal.tsx            ← Login/Register modal
+            Auth/UserDropdown.tsx         ← User menu dropdown
+            Layout/Sidebar.tsx            ← Navigation sidebar
+            Layout/Header.tsx             ← Top header bar
+            Layout/DashboardLayout.tsx    ← Dashboard layout wrapper
+        shared/
+            api/apiClient.ts              ← Axios HTTP client + JWT interceptor
+            context/AuthContext.tsx        ← Authentication state provider
+            hooks/useWebSocket.ts          ← Market WebSocket hook
+            hooks/useEventsWebSocket.ts    ← System events WebSocket hook
+            lib/timezone.ts               ← Device timezone utilities
  docs/
      architecture.md                      ← (Tài liệu này)
      architecture-qa.md                   ← Trả lời 10 câu hỏi kiến trúc
@@ -481,6 +551,6 @@ KTPM-crypto-project/
 | **Modifiability** | Plugin Pattern + Strategy Registry + IStrategy interface |
 | **Scalability** | Celery Worker Pool + Redis Job Queue + EventBus Redis Streams |
 | **Reliability & Fault Tolerance** | Module isolation, auto-reconnect Binance WS, try/catch cách ly lỗi |
-| **Observability** | Real-time search progress, candidate count, fitness curve, 12-column trade detail |
+| **Observability** | Real-time search progress, candidate count, fitness curve, 13-column trade detail |
 | **Testability** | Pure function strategies, Repository Pattern, EventBus fallback for unit tests |
 | **Extensibility** | IExchangeAdapter, INewsProvider, IStrategy — mở rộng không sửa core |

@@ -84,7 +84,7 @@
 
 ---
 
-### Bước 7: Bảng Chi Tiết Lệnh 12 Cột & Hạch Toán Rủi Ro (Trade Detail)
+### Bước 7: Bảng Chi Tiết Lệnh 13 Cột & Hạch Toán Rủi Ro (Trade Detail)
 - **Hành động**: Quan sát bảng **Lịch Sử Lệnh Chi Tiết (Trade Detail Table)** bên dưới biểu đồ.
 - **Thực tế hiển thị**:
   - **Khung thống kê tổng hợp**:
@@ -93,7 +93,7 @@
     - `Max Drawdown: -70.0%`
     - `Profit Factor: 1.85`, `Sharpe Ratio: 1.42`
     - `Total Trades: 100`, `Tổng Phí & Trượt giá 5bps: $5.00`
-  - **Bảng 12 cột chuẩn xác**:
+  - **Bảng 13 cột chuẩn xác**:
     1. `#` (STT) | 2. `Pair/Coin` | 3. `Hướng (LONG/SHORT)` | 4. `Thời gian vào` | 5. `Giá vào` | 6. `Vốn USD ($100)` | 7. `Stoploss` | 8. `TakeProfit` | 9. `Thời gian thoát` | 10. `Giá ra` | 11. `Phí (Cost)` | 12. `Slippage (5bps)` | 13. `Net Profit ($ và %)`
   - **Tương tác trực quan**: Click vào dòng lệnh bất kỳ trong bảng $\rightarrow$ Biểu đồ tự động cuộn tới và phóng to cây nến vào/thoát lệnh tương ứng.
   - Hỗ trợ bộ lọc nhanh (*ALL, WINS, LOSSES, LONG, SHORT*) và nút **Xuất CSV**.
@@ -141,4 +141,4 @@ Qua 10 bước trên, giảng viên và hội đồng có thể kiểm chứng �
 3. **Composite Strategy**: Hợp nhất đa chiến lược linh hoạt (AND/OR/WEIGHTED).
 4. **Genetic Algorithm & Search Loop**: Tối ưu hóa tham số tự động.
 5. **FinBERT NLP Sentiment & Smart Crawler**: Tự động học tag schema và lượng hóa tin tức.
-6. **AI Studio & Backtest 12 Cột**: Chuẩn hóa JSON, quản trị rủi ro SL/TP và hạch toán tài chính chính xác.
+6. **AI Studio & Backtest 13 Cột**: Chuẩn hóa JSON, quản trị rủi ro SL/TP và hạch toán tài chính chính xác.
