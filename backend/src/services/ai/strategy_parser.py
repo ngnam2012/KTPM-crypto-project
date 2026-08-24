@@ -30,20 +30,20 @@ class AIStrategyParser:
         logic = "AND"
 
         # Check logic
-        if " or " in p_lower or "hoặc" in p_lower:
+        if " or " in p_lower or "either" in p_lower:
             logic = "OR"
-        elif "weight" in p_lower or "trọng số" in p_lower or "tỉ trọng" in p_lower:
+        elif "weight" in p_lower or "weighted" in p_lower:
             logic = "WEIGHTED"
 
         # Extract Stop Loss
         stop_loss_pct = 2.0
-        sl_match = re.search(r'(stop\s*loss|stoploss|sl|cắt\s*lỗ|cắt)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
+        sl_match = re.search(r'(stop\s*loss|stoploss|sl|loss)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
         if sl_match:
             stop_loss_pct = float(sl_match.group(2))
 
         # Extract Take Profit
         take_profit_pct = 4.0
-        tp_match = re.search(r'(take\s*profit|takeprofit|tp|chốt\s*lời|chốt\s*lai|chốt)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
+        tp_match = re.search(r'(take\s*profit|takeprofit|tp|target|profit)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', p_lower)
         if tp_match:
             take_profit_pct = float(tp_match.group(2))
 
@@ -54,7 +54,7 @@ class AIStrategyParser:
             trailing_stop_pct = float(ts_match.group(2))
 
         # 1. Check RSI
-        if any(w in p_lower for w in ["rsi", "relative strength", "quá mua", "quá bán", "oversold", "overbought"]):
+        if any(w in p_lower for w in ["rsi", "relative strength", "oversold", "overbought"]):
             window = 14
             oversold = 30
             overbought = 70
@@ -64,10 +64,10 @@ class AIStrategyParser:
             if rsi_win:
                 window = int(rsi_win.group(1))
 
-            os_match = re.search(r'(quá bán|oversold|<|dưới|dưới mức|below)\s*(\d+)', p_lower)
+            os_match = re.search(r'(oversold|<|below|under)\s*(\d+)', p_lower)
             if os_match:
                 oversold = int(os_match.group(2))
-            ob_match = re.search(r'(quá mua|overbought|>|trên|vượt mức|above)\s*(\d+)', p_lower)
+            ob_match = re.search(r'(overbought|>|above|over)\s*(\d+)', p_lower)
             if ob_match:
                 overbought = int(ob_match.group(2))
 
@@ -82,7 +82,7 @@ class AIStrategyParser:
             })
 
         # 2. Check Bollinger Bands
-        if any(w in p_lower for w in ["bollinger", "bb", "dải bollinger", "std", "lower band", "upper band"]):
+        if any(w in p_lower for w in ["bollinger", "bb", "bollinger bands", "std", "lower band", "upper band"]):
             period = 20
             std_dev = 2.0
             
@@ -104,7 +104,7 @@ class AIStrategyParser:
             })
 
         # 3. Check MA Crossover
-        if any(w in p_lower for w in ["ma", "moving average", "sma", "ema", "crossover", "đường trung bình"]):
+        if any(w in p_lower for w in ["ma", "moving average", "sma", "ema", "crossover"]):
             short_w = 10
             long_w = 50
             nums = [int(n) for n in re.findall(r'\b\d+\b', prompt)]
@@ -123,7 +123,7 @@ class AIStrategyParser:
             })
 
         # 4. Check Support / Resistance
-        if any(w in p_lower for w in ["support", "resistance", "hỗ trợ", "kháng cự", "cản", "breakout"]):
+        if any(w in p_lower for w in ["support", "resistance", "sr", "breakout"]):
             indicators.append({"name": "SupportResistance", "lookback": 20})
             long_conditions.append("Price rebounds from Support Zone")
             short_conditions.append("Price rejected at Resistance Zone")
@@ -134,7 +134,7 @@ class AIStrategyParser:
             })
 
         # 5. Check SMC / Smart Money Concept
-        if any(w in p_lower for w in ["smc", "smart money", "order block", "ob", "liquidity", "thanh khoản"]):
+        if any(w in p_lower for w in ["smc", "smart money", "order block", "ob", "liquidity"]):
             indicators.append({"name": "SMC_OrderBlock", "swingLength": 5})
             long_conditions.append("Bullish Order Block (OB) detected with Liquidity Sweep")
             short_conditions.append("Bearish Order Block (OB) detected with Liquidity Sweep")
@@ -145,7 +145,7 @@ class AIStrategyParser:
             })
 
         # 6. Check News Sentiment
-        if any(w in p_lower for w in ["news", "sentiment", "tin tức", "cảm xúc", "tin tốt", "tin xấu", "positive", "negative"]):
+        if any(w in p_lower for w in ["news", "sentiment", "sentiment score", "positive", "negative"]):
             indicators.append({"name": "NewsSentiment", "model": "FinBERT"})
             long_conditions.append("Sentiment Score > 0.65 (Bullish news sentiment)")
             short_conditions.append("Sentiment Score < 0.35 (Bearish news sentiment)")
