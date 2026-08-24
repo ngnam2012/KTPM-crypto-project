@@ -126,7 +126,7 @@ async def save_custom_strategy(
         if dup:
             raise HTTPException(
                 status_code=409,
-                detail=f"Chiến lược với các thông số này đã tồn tại trong thư viện ('{dup.name}')."
+                detail=f"A strategy with these parameters already exists in the library ('{dup.name}')."
             )
 
         db_id = str(uuid4())

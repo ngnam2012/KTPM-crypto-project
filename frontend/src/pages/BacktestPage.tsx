@@ -268,7 +268,7 @@ export const BacktestPage: React.FC = () => {
 
     const name = stratData.name || stratData.strategy_name || "Custom Strategy";
     setToast({ 
-      message: `Đã nạp chiến lược '${name}' (SL: ${sl ?? '2'}%, TP: ${tp ?? '4'}%)`, 
+      message: `Loaded strategy '${name}' (SL: ${sl ?? '2'}%, TP: ${tp ?? '4'}%)`, 
       type: 'success' 
     });
     setTimeout(() => setToast(null), 3500);

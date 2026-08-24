@@ -238,30 +238,30 @@ export const StrategyStudioPage: React.FC = () => {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.detail || "Failed to save strategy to library.");
       }
-      setToast({ message: `Chiến lược '${libraryName}' đã được lưu vào Thư viện thành công!`, type: 'success' });
+      setToast({ message: `Strategy '${libraryName}' saved to library successfully!`, type: 'success' });
       setTimeout(() => setToast(null), 3500);
     } catch (e: any) {
-      setToast({ message: e.message || "Lỗi lưu thư viện", type: 'error' });
+      setToast({ message: e.message || "Failed to save strategy to library", type: 'error' });
       setTimeout(() => setToast(null), 4000);
     }
   };
 
   const handleDeleteFromLibrary = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa chiến lược '${name}' khỏi thư viện?`)) return;
+    if (!window.confirm(`Are you sure you want to delete strategy '${name}' from library?`)) return;
     try {
       const res = await fetch(`http://localhost:8000/api/v1/custom-strategies/saved/${id}`, {
         method: "DELETE"
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Không thể xóa chiến lược.");
+        throw new Error(errorData.detail || "Failed to delete strategy.");
       }
       setSavedStrategies(prev => prev.filter(s => s.id !== id));
-      setToast({ message: `Đã xóa chiến lược '${name}' khỏi Thư viện.`, type: 'success' });
+      setToast({ message: `Deleted strategy '${name}' from library.`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (err: any) {
-      setToast({ message: err.message || "Lỗi khi xóa chiến lược", type: 'error' });
+      setToast({ message: err.message || "Error deleting strategy", type: 'error' });
       setTimeout(() => setToast(null), 4000);
     }
   };
@@ -738,7 +738,7 @@ export const StrategyStudioPage: React.FC = () => {
                         <button
                           onClick={(e) => handleDeleteFromLibrary(strat.id, strat.name, e)}
                           className="py-1.5 px-2.5 bg-bearish/10 hover:bg-bearish/25 border border-bearish/30 text-bearish-bright hover:text-white text-xs font-bold rounded-lg flex items-center justify-center transition-colors cursor-pointer"
-                          title="Xóa khỏi Thư viện"
+                          title="Delete from Library"
                         >
                           <Trash2 size={13} />
                         </button>
