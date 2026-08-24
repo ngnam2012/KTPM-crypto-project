@@ -65,34 +65,31 @@ const Navigation = () => {
   const { isAuthenticated, openAuthModal } = useAuth();
   
   const navLinks = [
-    { path: '/', label: 'Dashboard', fullLabel: 'Market Dashboard', icon: LayoutDashboard },
-    { path: '/backtest', label: 'Backtest', fullLabel: 'Backtest Workbench', icon: FlaskConical },
-    { path: '/strategy-studio', label: 'AI Studio', fullLabel: 'AI Strategy Studio', icon: Sparkles },
-    { path: '/search', label: 'AI Search', fullLabel: 'AI Search Engine', icon: Bot },
-    { path: '/leaderboard', label: 'Leaderboard', fullLabel: 'Leaderboard', icon: Trophy },
-    { path: '/news', label: 'News & Sentiment', fullLabel: 'News & Sentiment', icon: Newspaper },
+    { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/backtest', label: 'Backtest', icon: FlaskConical },
+    { path: '/strategy-studio', label: 'AI Studio', icon: Sparkles },
+    { path: '/search', label: 'AI Search', icon: Bot },
+    { path: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+    { path: '/news', label: 'News', icon: Newspaper },
   ];
 
   return (
     <nav className="bg-bg-panel/90 backdrop-blur-xl border-b border-border-subtle sticky top-0 z-50 transition-colors">
-      <div className="max-w-[1750px] mx-auto px-3 sm:px-4 md:px-6 py-2.5 flex items-center justify-between gap-2 lg:gap-4">
+      <div className="max-w-[1800px] mx-auto px-3 sm:px-4 lg:px-6 py-2 flex items-center justify-between gap-2 lg:gap-4">
         {/* Brand Logo */}
         <Link to="/" className="flex items-center gap-2.5 shrink-0 group">
-          <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center font-black text-bg-deep shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform shrink-0">
-            <Activity className="w-4 h-4 md:w-5 md:h-5 text-bg-deep" />
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center font-black text-bg-deep shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform shrink-0">
+            <Activity className="w-4 h-4 text-bg-deep" />
           </div>
           <div className="shrink-0">
-            <div className="text-base md:text-lg font-extrabold text-text-main tracking-tight group-hover:text-brand-400 transition-colors whitespace-nowrap">
+            <div className="text-sm sm:text-base font-extrabold text-text-main tracking-tight group-hover:text-brand-400 transition-colors whitespace-nowrap">
               Crypto Strategy Lab
-            </div>
-            <div className="text-[9px] md:text-[10px] font-medium text-text-dim tracking-wider uppercase hidden 2xl:block">
-              Quantitative Architecture & Backtest Suite
             </div>
           </div>
         </Link>
         
         {/* Desktop Nav */}
-        <div className="hidden xl:flex items-center gap-1 2xl:gap-1.5 shrink-0">
+        <div className="hidden lg:flex items-center gap-1 xl:gap-1.5 shrink-0">
           {navLinks.map((link) => {
             const Icon = link.icon;
             const isActive = location.pathname === link.path;
@@ -100,26 +97,27 @@ const Navigation = () => {
               <Link 
                 key={link.path}
                 to={link.path} 
-                className={`flex items-center gap-1.5 lg:gap-2 px-2.5 2xl:px-3.5 py-2 rounded-xl transition-all duration-200 font-medium text-xs whitespace-nowrap shrink-0 ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all duration-200 font-medium text-xs whitespace-nowrap shrink-0 ${
                   isActive 
                     ? 'bg-brand-500/15 text-brand-400 border border-brand-500/30 shadow-[0_0_15px_rgba(250,204,21,0.12)] font-bold' 
                     : 'text-text-muted hover:text-text-main hover:bg-bg-surface'
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="hidden 2xl:inline">{link.fullLabel}</span>
-                <span className="2xl:hidden">{link.label}</span>
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span>{link.label}</span>
               </Link>
             );
           })}
         </div>
 
         {/* Right Info: Live Device Clock, Auth User Menu & Mobile Toggle */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <LiveClock />
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="hidden md:block">
+            <LiveClock />
+          </div>
           <UserDropdown />
           <button 
-            className="xl:hidden p-2 text-text-muted hover:text-text-main hover:bg-bg-surface rounded-xl transition-colors shrink-0"
+            className="lg:hidden p-1.5 text-text-muted hover:text-text-main hover:bg-bg-surface rounded-xl transition-colors shrink-0"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle Navigation Menu"
           >
@@ -130,7 +128,7 @@ const Navigation = () => {
       
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-        <div className="xl:hidden px-4 pb-4 border-t border-border-subtle bg-bg-panel/95 backdrop-blur-xl flex flex-col gap-1.5">
+        <div className="lg:hidden px-4 pb-4 border-t border-border-subtle bg-bg-panel/95 backdrop-blur-xl flex flex-col gap-1.5">
           <div className="py-2 flex justify-between items-center sm:hidden">
             <LiveClock />
           </div>

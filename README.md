@@ -146,7 +146,39 @@ uvicorn src.main:app --reload --port 8000
 ```
 - API Documentation (Swagger UI): [http://localhost:8000/docs](http://localhost:8000/docs)
 
-### 3. Cài Đặt & Chạy Frontend
+### 3. Khởi Chạy Redis (Tùy chọn – Optional)
+
+Redis được dùng cho **EventBus Streams** và **Leaderboard Cache**. Hệ thống vẫn chạy bình thường nếu không có Redis (tự động fallback sang in-process mode).
+
+**Cách 1: Docker (khuyến nghị)**
+```bash
+docker run -d --name redis -p 6379:6379 redis:latest
+# Kiểm tra:
+docker exec -it redis redis-cli ping  # → PONG
+```
+
+**Cách 2: WSL2**
+```bash
+wsl sudo apt-get install redis-server -y
+wsl sudo service redis-server start
+wsl redis-cli ping  # → PONG
+```
+
+**Cách 3: Redis for Windows (không cần Docker/WSL)**
+
+Tải bản release tại: https://github.com/tporadowski/redis/releases
+```powershell
+# Giải nén và chạy trực tiếp:
+.\redis-server.exe
+
+# Hoặc cài như Windows Service:
+.\redis-server.exe --service-install
+net start Redis
+```
+
+> **Lưu ý**: Nếu không chạy Redis, `EventBus` và `LeaderboardService` sẽ tự động chuyển sang chế độ in-process. Phù hợp cho môi trường dev đơn máy.
+
+### 4. Cài Đặt & Chạy Frontend
 ```bash
 # 1. Di chuyển vào thư mục frontend
 cd frontend

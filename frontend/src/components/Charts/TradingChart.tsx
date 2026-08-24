@@ -205,10 +205,6 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
 
     markersPluginRef.current = null;
 
-    const handleResize = () => {
-      chartRef.current?.applyOptions({ width: chartContainerRef.current?.clientWidth });
-    };
-
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
@@ -219,8 +215,8 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
         vertLines: { color: 'rgba(148, 163, 184, 0.08)' },
         horzLines: { color: 'rgba(148, 163, 184, 0.08)' },
       },
-      width: chartContainerRef.current.clientWidth,
-      height: chartContainerRef.current.clientHeight,
+      width: chartContainerRef.current.clientWidth || 300,
+      height: chartContainerRef.current.clientHeight || 300,
       localization: {
         timeFormatter: (timestamp: number) => {
           const d = new Date(timestamp * 1000);
@@ -307,7 +303,19 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
     maSeriesRef.current = maSeries;
     volumeSeriesRef.current = volumeSeries;
 
-    window.addEventListener('resize', handleResize);
+    // Use ResizeObserver for accurate container width & height tracking
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries.length > 0 && chartRef.current) {
+        const { width, height } = entries[0].contentRect;
+        if (width > 0 && height > 0) {
+          chartRef.current.applyOptions({ width, height });
+        }
+      }
+    });
+
+    if (chartContainerRef.current) {
+      resizeObserver.observe(chartContainerRef.current);
+    }
 
     const fetchData = async () => {
       try {
@@ -365,7 +373,7 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
     fetchData();
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       try {
         if (chartRef.current) {
           chartRef.current.remove();
@@ -396,16 +404,16 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
   }, [lastCandle]);
 
   return (
-    <div className="w-full h-full relative glass-panel overflow-hidden flex flex-col">
+    <div className="w-full h-full relative glass-panel overflow-hidden flex flex-col select-none">
       {/* Top Left Symbol & Timeframe Control with Live Metrics */}
-      <div className="absolute top-3 left-3 z-10 bg-bg-panel/90 px-3 py-1.5 rounded-xl border border-border-subtle flex items-center gap-2.5 backdrop-blur-xl shadow-lg">
-        <span className="font-extrabold text-text-main font-mono text-xs md:text-sm">{symbol}</span>
+      <div className="absolute top-2.5 left-2.5 z-10 bg-bg-panel/90 px-2.5 py-1 rounded-xl border border-border-subtle flex items-center gap-2 backdrop-blur-xl shadow-lg max-w-[calc(100%-20px)] flex-wrap">
+        <span className="font-extrabold text-text-main font-mono text-xs">{symbol}</span>
         
         {/* Timeframe Dropdown */}
         <select 
           value={currentTimeframe} 
           onChange={(e) => setCurrentTimeframe(e.target.value)}
-          className="text-brand-400 font-bold px-2 py-0.5 bg-bg-surface hover:bg-bg-hover rounded-lg border border-border-subtle outline-none cursor-pointer transition-colors font-mono text-xs"
+          className="text-brand-400 font-bold px-1.5 py-0.5 bg-bg-surface hover:bg-bg-hover rounded-lg border border-border-subtle outline-none cursor-pointer transition-colors font-mono text-[11px]"
         >
           <option value="1m">1m</option>
           <option value="5m">5m</option>
@@ -417,11 +425,11 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
 
         {/* Live Price & Change Badge */}
         {latestPrice !== null && (
-          <div className="hidden md:flex items-center gap-2 border-l border-border-subtle pl-2 font-mono text-xs">
-            <span className="font-extrabold text-text-main">
+          <div className="flex items-center gap-1.5 border-l border-border-subtle pl-1.5 font-mono text-xs">
+            <span className="font-bold text-text-main">
               ${latestPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <span className={`text-[11px] font-bold ${priceChangePct >= 0 ? 'text-bullish-bright' : 'text-bearish-bright'}`}>
+            <span className={`text-[10px] font-bold ${priceChangePct >= 0 ? 'text-bullish-bright' : 'text-bearish-bright'}`}>
               {priceChangePct >= 0 ? '+' : ''}{priceChangePct.toFixed(2)}%
             </span>
           </div>
@@ -429,7 +437,7 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
 
         {/* MA(20) Pill */}
         {ma20Value !== null && (
-          <span className="hidden xl:inline-block text-[10px] px-1.5 py-0.5 rounded bg-accent-blue/15 text-accent-blue font-mono font-semibold border border-accent-blue/30">
+          <span className="hidden sm:inline-block text-[9px] px-1.5 py-0.5 rounded bg-accent-blue/15 text-accent-blue font-mono font-semibold border border-accent-blue/30">
             MA(20): ${ma20Value.toLocaleString()}
           </span>
         )}
@@ -448,7 +456,7 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
 
       {/* Top Right Signal Legend Overlay (Rendered only when active backtest trade markers exist) */}
       {activeMarkersCount > 0 && (
-        <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-2 bg-bg-panel/90 px-3 py-1.5 rounded-xl border border-border-subtle backdrop-blur-xl shadow-lg text-[11px] font-mono select-none">
+        <div className="absolute top-2.5 right-2.5 z-10 hidden sm:flex items-center gap-2 bg-bg-panel/90 px-2.5 py-1 rounded-xl border border-border-subtle backdrop-blur-xl shadow-lg text-[10px] font-mono select-none">
           <span className="flex items-center gap-1 text-bullish-bright font-bold">
             <span>▲ LONG</span>
           </span>
@@ -460,13 +468,13 @@ export const TradingChart = forwardRef<TradingChartHandle, TradingChartProps>(({
           <span className="flex items-center gap-1 text-brand-400 font-medium">
             <span>● EXIT (TP/SL)</span>
           </span>
-          <span className="ml-1 px-2 py-0.2 rounded-full bg-brand-500/20 text-brand-400 font-bold border border-brand-500/40 text-[10px]">
-            {activeMarkersCount} Backtest Trades
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-brand-500/20 text-brand-400 font-bold border border-brand-500/40 text-[9px]">
+            {activeMarkersCount} Trades
           </span>
         </div>
       )}
 
-      <div ref={chartContainerRef} className="flex-1 w-full" />
+      <div ref={chartContainerRef} className="flex-1 w-full min-h-0" />
     </div>
   );
 });

@@ -2,11 +2,11 @@
 ## Crypto Strategy Lab – Nền Tảng Phân Tích, Kết Hợp và Đánh Giá Chiến Lược Giao Dịch Crypto
 
 > **Môn học**: Kiến trúc Phần mềm (Software Architecture)  
-> **Trọng tâm đồ án**: Thiết kế Kiến trúc Phần mềm có khả năng mở rộng (Extensibility), chịu tải (Scalability), lỏng khớp (Loose Coupling), dễ bảo trì (Maintainability) và kiểm chứng độc lập (Verification Loop).
+> **Trọng tâm đồ án**: Thiết kế Kiến trúc Phần mềm có khả năng mở rộng, chịu tải, lỏng khớp, dễ bảo trì và kiểm chứng độc lập.
 
 ---
 
-## 1. Bối Cảnh Hệ Thống (System Context - C4 Model Level 1)
+## 1. Bối Cảnh Hệ Thống (System Context – C4 Model Level 1)
 
 Hệ thống **Crypto Strategy Lab** hoạt động như một nền tảng thực nghiệm và phân tích chiến lược tự động. Hệ thống tương tác với các tác nhân bên ngoài:
 - **Người dùng (Trader / Quản trị viên)**: Tương tác qua giao diện Web SPA để theo dõi thị trường thời gian thực, cấu hình backtest, sinh chiến lược qua prompt tự nhiên và tìm kiếm biến thể tối ưu.
@@ -16,208 +16,471 @@ Hệ thống **Crypto Strategy Lab** hoạt động như một nền tảng th�
 
 ```mermaid
 graph TD
-    User["Người Dùng (Trader / Analyst)"]
-    Binance["Binance Exchange (REST & WSS)"]
-    NewsSources["Crypto News Providers (RSS / Web)"]
+    User[" Người Dùng<br/>(Trader / Analyst / Admin)"]
+    Binance[" Binance Exchange<br/>(REST & WebSocket API)"]
+    NewsSources[" Crypto News Providers<br/>(CryptoPanic / Cointelegraph / RSS)"]
+    FinBERT[" FinBERT ML Model<br/>(Sentiment Analysis)"]
     
-    System["Crypto Strategy Lab Platform<br/>(Core Engine, Backtester, AI Studio)"]
+    System[" Crypto Strategy Lab Platform<br/>(Core Engine, Backtester,<br/>AI Studio, Search Engine)"]
     
-    User <-->|HTTP REST & WebSocket| System
-    System <-->|OHLCV REST & Tick WSS| Binance
-    System <-->|Crawl Articles & RSS| NewsSources
+    User <-->|"HTTP REST & WebSocket"| System
+    System <-->|"OHLCV REST & Tick WSS"| Binance
+    System <-->|"Crawl Articles & RSS"| NewsSources
+    System -->|"Analyze Sentiment"| FinBERT
 ```
 
 ---
 
-## 2. Phân Rã Module & Container (Container Decomposition - C4 Level 2)
+## 2. Phân Rã Container (Container Decomposition – C4 Level 2)
 
 Hệ thống được thiết kế theo nguyên lý **Clean Architecture** kết hợp **Hexagonal Architecture (Ports and Adapters)** và **Event-Driven Architecture**:
 
 ```mermaid
 graph TD
-    subgraph "Frontend Layer (React 19 + Vite + TypeScript)"
-        Dash["Market Dashboard (4-Timeframe WSS)"]
-        BacktestUI["Backtest Workbench (/backtest)"]
-        StudioUI["AI Strategy Studio (/strategy-studio)"]
-        SearchUI["AI Search Engine (/search)"]
-        LeaderboardUI["Leaderboard (/leaderboard)"]
-        NewsUI["News Feed & NLP Sentiment (/news)"]
+    subgraph "Frontend Container<br/>(React 19 + Vite + TypeScript)"
+        Dash[" Market Dashboard<br/>(4-Timeframe WSS)"]
+        BacktestUI[" Backtest Workbench<br/>(/backtest)"]
+        StudioUI[" AI Strategy Studio<br/>(/strategy-studio)"]
+        SearchUI[" AI Search Engine<br/>(/search)"]
+        LeaderboardUI[" Leaderboard<br/>(/leaderboard)"]
+        NewsUI[" News Feed & Sentiment<br/>(/news)"]
     end
 
-    subgraph "Interface Adapters (API & WebSockets)"
-        FastAPI["FastAPI REST Routers"]
-        WSMultiplexer["WebSocket Multiplexer Manager"]
+    subgraph "Interface Adapters<br/>(API & WebSocket Gateway)"
+        FastAPI["FastAPI REST Routers<br/>(backtest, search, news,<br/>sentiment, auth, strategy)"]
+        WSMultiplexer["WebSocket Multiplexer<br/>(market_ws + events_ws)"]
     end
 
-    subgraph "Application Core Layer (Services & Engine)"
-        StrategyEngine["Strategy Registry & Plugin Engine"]
-        CompositeEngine["Composite Logic & Weighted Engine"]
-        BacktestEngine["Backtest & Trade Simulator Engine"]
-        Evaluator["Backtest Financial Evaluator"]
-        LeaderboardService["Leaderboard Service (Top-K)"]
-        SearchEngine["Strategy Search (Random & Genetic GA)"]
-        NewsService["News Collector & Tag Schema Crawler"]
-        MLService["NLP Sentiment Service (FinBERT)"]
-        AIParser["Natural Language Strategy Parser"]
+    subgraph "Application Core Layer<br/>(Domain Services & Engine)"
+        StrategyEngine["Strategy Registry<br/>& Plugin Engine"]
+        CompositeEngine["Composite Logic<br/>(AND / OR / WEIGHTED)"]
+        BacktestEngine["Backtest Evaluator<br/>& Trade Simulator"]
+        LeaderboardService["Leaderboard Service<br/>(Three-tier: Redis+DB+InProc)"]
+        SearchEngine["Strategy Search<br/>(Random + Genetic GA)"]
+        NewsService["News Collector<br/>& Smart Crawler"]
+        MLService["Sentiment Service<br/>(FinBERT NLP)"]
+        AIParser["AI Strategy Parser<br/>(NL → JSON Schema)"]
     end
 
-    subgraph "Message Broker & Storage Layer"
-        EventBus[("EventBus / Redis Message Broker")]
-        DB[("Database (SQLite / PostgreSQL)")]
+    subgraph "Message Broker & Storage"
+        EventBus[("EventBus<br/>(Redis Streams / In-Process)")]
+        DB[("Database<br/>(SQLite / PostgreSQL)")]
+        RedisCache[("Redis Cache<br/>(Leaderboard Hash)")]
     end
 
     subgraph "External Infrastructure Adapters"
-        BinanceAdapter["BinanceAdapter (Async CCXT)"]
-        SmartCrawler["Smart Web Crawler (HTML Tag Learner)"]
+        BinanceAdapter["BinanceAdapter<br/>(Async CCXT)"]
+        BinanceWSAdapter["Binance WS Adapter<br/>(Realtime Kline)"]
+        SmartCrawler["Smart Web Crawler<br/>(HTML Tag Schema Learner)"]
     end
 
-    Frontend Layer <-->|HTTP / JSON| FastAPI
-    Frontend Layer <-->|WebSocket Stream| WSMultiplexer
+    Dash & BacktestUI & StudioUI & SearchUI & LeaderboardUI & NewsUI <-->|"HTTP / JSON"| FastAPI
+    Dash <-->|"WebSocket Stream"| WSMultiplexer
 
-    FastAPI --> Application Core Layer
-    WSMultiplexer --> BinanceAdapter
+    FastAPI --> StrategyEngine & CompositeEngine & BacktestEngine & SearchEngine & AIParser
+    WSMultiplexer --> BinanceWSAdapter
 
-    Application Core Layer --> EventBus
-    EventBus --> LeaderboardService
-    EventBus --> WSMultiplexer
+    BacktestEngine -->|"publish BACKTEST_COMPLETED"| EventBus
+    SearchEngine -->|"publish BACKTEST_COMPLETED"| EventBus
+    EventBus -->|"subscribe"| LeaderboardService
+    EventBus -->|"subscribe LEADERBOARD_UPDATED"| WSMultiplexer
 
-    Application Core Layer --> DB
-    Application Core Layer --> External Infrastructure Adapters
+    LeaderboardService --> DB & RedisCache
+    BacktestEngine --> DB
+    NewsService --> SmartCrawler
+    SmartCrawler --> MLService
+    StrategyEngine --> BinanceAdapter
 ```
 
 ---
 
-## 3. Trách Nhiệm Chi Tiết Của Từng Thành Phần (Component Responsibilities)
+## 3. Phân Rã Thành Phần Chi Tiết (Component Diagram – C4 Level 3)
 
 ### 3.1. Domain Layer (`backend/src/domain/`)
-- **`IStrategy`**: Interface chuẩn mực quy định hàm `generate_signals(df) -> SignalSeries`. Mọi chiến lược mới chỉ cần cài đặt interface này.
-- **`IExchangeAdapter`**: Interface chuẩn để kết nối các sàn giao dịch (Binance, OKX, Bybit).
-- **`INewsProvider`**: Interface thu thập tin tức độc lập nguồn dữ liệu.
-- **Entities & Dataclasses**: `Candle`, `TradeRecord`, `BacktestMetrics`, `SignalSeries`.
+
+| Interface | File | Mô tả |
+|:---|:---|:---|
+| `IStrategy` | `interfaces.py` | Hợp đồng chuẩn: `id`, `name`, `description`, `default_params`, `generate_signals(df, params) → pd.Series` |
+| `IExchangeAdapter` | `adapters/base_exchange.py` | Hợp đồng kết nối sàn: `fetch_ohlcv(symbol, timeframe, limit) → DataFrame` |
+| `INewsProvider` | `news_interfaces.py` | Hợp đồng thu thập tin: `fetch_news(query, limit) → List[NewsItem]` |
+
+Các entity/dataclass: `NewsItem(id, title, content, source, url, published_at, sentiment_score, sentiment_label)`.
 
 ### 3.2. Strategy Plugin Architecture (`backend/src/strategies/`)
-- **`StrategyRegistry`**: Kho đăng ký và quản lý các chiến lược đơn lẻ (`MAStrategy`, `RSIStrategy`, `BollingerBandsStrategy`, `SupportResistanceStrategy`, `SMCStrategy`, `NewsSentimentStrategy`).
-- **`CompositeStrategy`**: Cho phép kết hợp $N$ chiến lược đơn lẻ bất kỳ theo:
-  - **Logic AND**: Tất cả chiến lược cùng đồng thuận thì mới vào lệnh.
-  - **Logic OR**: Bất kỳ chiến lược nào có tín hiệu thì vào lệnh.
-  - **Logic WEIGHTED**: Tính tổng điểm có trọng số $Score = \sum (Signal_i \times Weight_i)$. Nếu $Score > \text{threshold}$ thì BUY, ngược lại SELL.
+
+```
+strategies/
+ base.py                    ← BaseStrategy(IStrategy) – utility get_params()
+ registry.py                ← StrategyRegistry (Singleton, Auto-Discovery)
+ composite.py               ← CompositeStrategy (AND / OR / WEIGHTED)
+ implementations/
+     ma_strategy.py          ← MA Crossover (short_window, long_window)
+     rsi_strategy.py         ← RSI (window, overbought, oversold)
+     bollinger_strategy.py   ← Bollinger Bands (period, std_dev)
+     support_resistance_strategy.py ← Support & Resistance
+     smc_strategy.py         ← Smart Money Concepts (Order Block)
+     news_sentiment_strategy.py     ← News Sentiment (FinBERT score)
+```
+
+- **`StrategyRegistry`** (Singleton): Tự động scan thư mục `implementations/`, nạp mọi class kế thừa `IStrategy`, đăng ký bằng `strategy_id`. Không cần import thủ công.
+- **`CompositeStrategy`**: Kết hợp $N$ chiến lược đơn lẻ theo logic:
+  - **AND**: Tất cả chiến lược cùng đồng thuận → BUY/SELL.
+  - **OR**: Bất kỳ chiến lược nào phát tín hiệu → BUY/SELL (xung đột → HOLD).
+  - **WEIGHTED**: $Score = \sum (Signal_i \times Weight_i)$. Nếu $Score > 0.5$ → BUY, $Score < -0.5$ → SELL.
 
 ### 3.3. Backtesting & Trade Simulation Engine (`backend/src/services/backtest/`)
-- **`TradeSimulator`**: Giả lập vào/thoát lệnh theo nến lịch sử, hỗ trợ cả vị thế **LONG** và **SHORT**.
-- **Quản trị rủi ro bắt buộc**: Cắt lỗ (**Stop Loss %**), Chốt lời (**Take Profit %**), **Trailing Stop %**.
-- **Hạch toán chi phí chuẩn tài chính**:
-  - Khối lượng lệnh quy đổi tiền mặt theo vốn ban đầu (ví dụ: `$100.00`).
-  - Phí giao dịch (Transaction Fee, mặc định `0.05%`).
-  - Giả lập trượt giá thị trường (**Slippage 5bps** $= 0.05\%$).
-- **`BacktestEvaluator`**: Tính toán 8 chỉ số hiệu năng độc lập khỏi logic giao dịch:
-  $$\text{Winrate} = \frac{\text{Wins}}{\text{Total Trades}}, \quad \text{MDD}, \quad \text{Profit Factor} = \frac{\text{Gross Profit}}{\text{Gross Loss}}, \quad \text{Sharpe Ratio}, \quad \text{Total Net Profit (\$)}$$
 
-### 3.4. Continuous Strategy Loop & AI Search Engine (`backend/src/services/search/`)
-- **`RandomSearch`**: Sinh ngẫu nhiên các tổ hợp chỉ báo và tham số.
-- **`GeneticSearch` (Giải thuật Di truyền - GA)**:
-  - Khởi tạo quần thể biến thể chiến lược.
-  - Đánh giá hàm thích nghi (Fitness Function).
-  - Chọn lọc (Selection), Lai ghép (Crossover) và Đột biến (Mutation) qua nhiều thế hệ để liên tục tìm kiếm tổ hợp vượt trội.
-- **Vòng lặp ngầm (Continuous Loop)**: Kiểm soát trạng thái chạy (Pause, Resume, Stop Condition khi đạt max iterations hoặc không cải thiện sau $N$ vòng).
+- **`BacktestEvaluator`**: Tính toán metrics tài chính từ signals + price data (vectorized Pandas):
+  - Total Return, Total Profit USD, Max Drawdown, Winrate, Wins/Losses Count, Profit Factor, Sharpe Ratio.
+  - Hạch toán chi phí: Phí giao dịch (mặc định 0.05%), Slippage (5bps = 0.05%).
+- **`TradeSimulator`**: Giả lập vào/thoát lệnh chi tiết cho cả LONG và SHORT:
+  - Stop Loss %, Take Profit %, Trailing Stop %.
+  - Xuất 12+ cột chi tiết: STT, Pair, Direction, Entry/Exit Time & Price, Volume USD, SL, TP, Fee, Slippage, Net Profit.
 
-### 3.5. AI Strategy Studio & Natural Language Parser (`backend/src/services/ai/`)
-- Phân tích câu lệnh tự nhiên (ví dụ: *"RSI 30 và giá dưới Bollinger Lower Band 20, Stop loss 2%, take profit 4%"*) hoặc bài viết kỹ thuật.
-- Bóc tách chỉ báo, điều kiện Long/Short, Stop Loss, Take Profit.
-- Chuẩn hóa thành **JSON Schema chuẩn** và thực hiện **Kiểm tra & Validation** (thiếu trường, logic hợp lệ, chỉ báo hỗ trợ).
-- Lưu vào **Strategy Library** (`strategy_definitions`) để tái sử dụng.
+### 3.4. AI Search Engine (`backend/src/services/search/`)
 
-### 3.6. Smart Web Crawler & Sentiment ML Pipeline (`backend/src/services/crawler/`, `backend/src/services/ML/`)
-- **Smart Crawler**: Crawl nội dung bài viết từ URL bất kỳ, tự động học và lưu cấu trúc HTML Tag (`h1`, `article p`, `time`, `og:title`) vào SQLite (`crawler_tag_schemas`).
-- **Sentiment Model**: Mô hình NLP FinBERT chấm điểm cảm xúc tin tức (-1.0 đến +1.0) và cấp tín hiệu cho `NewsSentimentStrategy`.
+| Class | Thuật toán | Mô tả |
+|:---|:---|:---|
+| `StrategyGenerator` | — | Sinh ngẫu nhiên `StrategyCandidate` (1–3 strategies, random params, random logic) |
+| `RandomSearch` | Monte Carlo | Sinh $N$ candidates → Backtest → Rank by overall score → Top-K |
+| `GeneticSearch` | Genetic Algorithm | Population → Evaluate → Tournament Selection → Crossover → Mutation → Next Gen |
+| `tasks.py` | Celery Task | Worker pool cho phép scale search ra nhiều process/máy chủ |
 
-### 3.7. Authentication & Security Layer (`backend/src/core/security.py`, `backend/src/api/v1/auth_router.py`)
-- **JSON Web Tokens (JWT)**: Xác thực phiên người dùng theo chuẩn RFC 7519 HMAC-SHA256, tự động gán hạn sử dụng 24h.
-- **Mã hóa mật khẩu an toàn**: Thuật toán PBKDF2-HMAC-SHA256 với muối ngẫu nhiên (salt 32 bytes) và 100.000 vòng lặp.
-- **Role-Based Access Control (RBAC)**: Phân quyền vai trò người dùng (`trader`, `analyst`, `admin`).
-- **FastAPI Auth Dependencies**: `get_current_user` và `get_optional_user` kiểm tra token tự động tại các endpoints.
-- **Frontend Auth Context & Interceptor**: Quản lý phiên `localStorage`, tự động gắn `Authorization: Bearer <token>` vào request header, hiển thị User Avatar & Modal Đăng nhập/Đăng ký.
+- **Vòng lặp ngầm**: Hỗ trợ Pause / Resume / Stop. `asyncio.sleep(0.01)` yield control cho event loop.
+- **Overall Score**: $0.4 \times \tanh(return) + 0.3 \times winrate + 0.2 \times (1 + mdd) + 0.1 \times \tanh(sharpe/3)$
+
+### 3.5. AI Strategy Studio (`backend/src/services/ai/`)
+
+- **`AIStrategyParser`**: Phân tích prompt tự nhiên bằng regex pattern matching:
+  - Nhận diện chỉ báo (RSI, BB, MA, SMC, Support/Resistance, News Sentiment).
+  - Trích xuất Stop Loss, Take Profit, Trailing Stop.
+  - Xuất JSON Schema chuẩn hóa + Validation status.
+  - Persist vào bảng `strategy_definitions` với `source_prompt`, `version`, `params_json`.
+
+### 3.6. Smart Crawler & Sentiment ML Pipeline
+
+- **`SmartCrawler`** (`services/crawler/`): Crawl bài viết từ URL bất kỳ với anti-bot mitigation:
+  - Tự học cấu trúc HTML (og:title, h1, article p, time) và lưu tag schema vào DB (`crawler_tag_schemas`).
+  - Fallback bằng URL-slug extraction khi bị Cloudflare block.
+- **`SentimentService`** (`services/ML/`): FinBERT chấm điểm cảm xúc (-1.0 → +1.0), trả `SentimentResult(label, score)`.
+
+### 3.7. Event Bus & Message Broker (`infrastructure/message_broker/`)
+
+**`EventBus`** (Singleton) hỗ trợ 2 mode:
+1. **Redis Streams** (production): XADD/XREADGROUP/XACK – persistent, at-least-once delivery, consumer groups.
+2. **In-process** (fallback/dev): Fire-and-forget Pub/Sub khi Redis không available.
+
+Event types: `BACKTEST_COMPLETED`, `LEADERBOARD_UPDATED`, `STRATEGY_GENERATED`, `NEWS_COLLECTED`, `SENTIMENT_ANALYZED`, `MARKET_PRICE_UPDATED`.
+
+### 3.8. Leaderboard Service (`services/leaderboard/`)
+
+Three-tier storage strategy:
+1. **Redis Hash** (`leaderboard:entries`): Cross-worker shared state, TTL 24h.
+2. **SQLite / PostgreSQL**: Persistent storage qua ORM (`leaderboard_entries` ↔ `backtest_results` ↔ `strategy_definitions`).
+3. **In-process Dict**: Fast local read cache, merge với Redis khi `get_all()`.
+
+### 3.9. Authentication & Security (`core/security.py`, `api/v1/auth_router.py`)
+
+- **JWT** (HMAC-SHA256, 24h expiry), **PBKDF2-HMAC-SHA256** password hashing (32-byte salt, 100K iterations).
+- **RBAC**: `trader`, `analyst`, `admin`.
+- **FastAPI Dependencies**: `get_current_user`, `get_optional_user`.
 
 ---
 
-## 4. Các Luồng Dữ Liệu Chính (Data Flows)
+## 4. Các Luồng Dữ Liệu Chính (Key Data Flows)
 
 ### 4.1. Luồng WebSocket Realtime (Multi-Timeframe Streaming)
+
 ```mermaid
 sequenceDiagram
     participant UI as Frontend (4 Charts)
     participant WS as WebSocket Multiplexer
-    participant BA as Binance Adapter
+    participant BA as Binance WS Adapter
     participant B as Binance WSS API
 
     UI->>WS: Connect /ws/market?symbol=BTC/USDT&interval=15m
     alt Chưa có kết nối Binance cho cặp này
-        WS->>BA: Mở luồng Binance WebSocket
+        WS->>BA: subscribe(symbol, interval, callback)
         BA->>B: Subscribe @kline_15m
     end
     WS->>UI: Accept Connection
     B-->>BA: Live Candle Tick JSON
-    BA-->>WS: Normalized Candle Data
-    WS-->>UI: Broadcast Tick (Không độ trễ)
+    BA-->>WS: on_new_candle(normalized_data)
+    WS-->>UI: broadcast(candle_data) — Zero-latency fan-out
+    Note over UI,WS: Khi client disconnect → unsubscribe callback.<br/>Nếu không còn client → đóng Binance stream.
 ```
 
 ### 4.2. Luồng Backtest & Event-Driven Leaderboard Update
+
 ```mermaid
 sequenceDiagram
     participant User as Trader / UI
     participant API as Backtest Router
-    participant Adapter as Binance Adapter
+    participant Adapter as Binance Adapter (CCXT)
     participant Engine as Strategy & Composite Engine
     participant Sim as Trade Simulator & Evaluator
-    participant Bus as EventBus (Pub/Sub)
+    participant Bus as EventBus (Redis Streams)
     participant LB as Leaderboard Service
-    participant DB as SQLite / Postgres
+    participant DB as SQLite / PostgreSQL
 
-    User->>API: POST /api/v1/backtest/run-with-trades (Vốn $100, SL 2%, TP 4%, Slippage 5bps)
-    API->>Adapter: fetch_ohlcv(symbol, timeframe, start_date, end_date)
+    User->>API: POST /api/v1/backtest/run-with-trades
+    Note right of User: {capital: $100, SL: 2%,<br/>TP: 4%, slippage: 5bps}
+    API->>Adapter: fetch_ohlcv(symbol, timeframe, start, end)
     Adapter-->>API: Historical Candles (DataFrame)
-    API->>Engine: generate_signals(DataFrame)
+    API->>Engine: generate_signals(DataFrame, params)
     Engine-->>API: Buy/Sell Signal Series
     API->>Sim: simulate(signals, capital, fee, slippage, SL, TP)
-    Sim-->>API: 12-Column Trades & Financial Metrics
-    API->>Bus: publish(BACKTEST_COMPLETED, result)
-    Bus-->>LB: on_backtest_completed(result)
-    LB->>LB: Tính Overall Score & Cập nhật Top-10
-    LB->>DB: Persist Leaderboard & Strategy Definition
-    API-->>User: Trả về JSON hiển thị Chart Markers & TradeDetailTable
+    Sim-->>API: 12+ Column Trades & Financial Metrics
+    API->>Bus: publish(BACKTEST_COMPLETED, {name, config, metrics})
+    Bus-->>LB: on_backtest_completed(data)
+    LB->>LB: compute_score() & check improvement
+    LB->>DB: Persist StrategyDefinition + BacktestResult + LeaderboardEntry
+    LB->>Bus: publish(LEADERBOARD_UPDATED, entry)
+    Bus-->>API: → WebSocket events_ws → Frontend auto-refresh
+    API-->>User: JSON {metrics, trades[], markers[], ohlcv[]}
+```
+
+### 4.3. Luồng AI Search (Genetic Algorithm)
+
+```mermaid
+sequenceDiagram
+    participant UI as Search Page
+    participant API as Search Router
+    participant GA as GeneticSearch Engine
+    participant Gen as StrategyGenerator
+    participant Eval as BacktestEvaluator
+    participant Bus as EventBus
+
+    UI->>API: POST /api/v1/search/start {algorithm: "genetic", generations: 5}
+    API->>GA: async_search(symbol, timeframe, population, generations)
+    GA->>Gen: generate_candidates(population_size)
+    Gen-->>GA: List[StrategyCandidate]
+    
+    loop Mỗi Generation
+        loop Mỗi Candidate trong Population
+            GA->>Eval: _evaluate_candidate(candidate, df)
+            Eval-->>GA: SearchResult {metrics, overall_score}
+        end
+        GA->>GA: Tournament Selection → Crossover → Mutation
+        GA->>GA: Elitism: giữ Top-2 qua thế hệ kế
+    end
+    
+    GA->>Bus: publish(BACKTEST_COMPLETED) cho Top-5
+    GA-->>API: state.results (Top-K)
+    UI->>API: GET /api/v1/search/status (polling)
+    API-->>UI: {progress, evaluated, best_score, results[]}
 ```
 
 ---
 
-## 5. Trả Lời 8 Câu Hỏi Kiến Trúc Cốt Lõi (Architectural Evaluation)
+## 5. Cấu Trúc Database (Data Model)
 
-Theo yêu cầu mục 40 của đồ án, hệ thống trả lời và giải quyết triệt để 8 câu hỏi kiến trúc:
+```mermaid
+erDiagram
+    users ||--o{ strategy_definitions : "creates"
+    users ||--o{ backtest_results : "runs"
+    strategy_definitions ||--o{ backtest_results : "tested by"
+    backtest_results ||--o{ trade_records : "contains"
+    backtest_results ||--o| leaderboard_entries : "ranked in"
 
-| STT | Câu hỏi kiến trúc | Lời giải đáp & Thiết kế của hệ thống |
-| :--- | :--- | :--- |
-| **1** | **Strategy mới (như MACD) được thêm như thế nào? Cần sửa component nào?** | Chỉ cần tạo file `macd.py` kế thừa `BaseStrategy`, cài đặt hàm `generate_signals()` và gọi `strategy_registry.register(MACDStrategy)`. **Không cần sửa bất kỳ dòng code nào** trong Controller, Backtester, Evaluator, Leaderboard hay Frontend. |
-| **2** | **Thêm Search Algorithm mới (từ Random sang Genetic) có ảnh hưởng Backtester không?** | **Hoàn toàn không**. `GeneticSearch` và `RandomSearch` chỉ sinh ra các `CandidateStrategy`. `BacktestEvaluator` nhận candidate và thực thi độc lập, không quan tâm candidate được sinh ra từ thuật toán nào. |
-| **3** | **Thêm Market Data Provider mới (Binance -> OKX, Bybit) có phải sửa Frontend không?** | **Không phải sửa Frontend**. `BinanceAdapter` và `OKXAdapter` đều cài đặt chung `IExchangeAdapter` và chuẩn hóa về đối tượng `Candle`. Frontend chỉ giao tiếp với Backend API qua chuẩn dữ liệu thống nhất. |
-| **4** | **Nếu số backtest tăng từ 100 lên 100.000 thì kiến trúc scale ra sao?** | Hệ thống sử dụng kiến trúc **Producer-Consumer với Celery Worker Pool và Redis Job Queue**. Các tác vụ backtest được đẩy vào hàng đợi và phân phối đều cho $N$ background workers chạy song song trên nhiều CPU/máy chủ. |
-| **5** | **Nếu News Service bị lỗi thì Chart có còn chạy không?** | **Vẫn chạy bình thường 100%**. News Service và Market Data Service là 2 module độc lập (Loose Coupling). Lỗi crawl tin tức được bắt gọn và cách ly, không ảnh hưởng đến luồng WebSocket nến của Chart. |
-| **6** | **Nếu Sentiment Model thay đổi (từ FinBERT sang GPT-4) thì Strategy Engine có bị ảnh hưởng không?** | **Không bị ảnh hưởng**. `SentimentService` cung cấp hàm chuẩn `analyze(text) -> SentimentResult(label, score)`. Dù thay đổi model ML bên dưới, kết quả trả về cho `NewsSentimentStrategy` vẫn giữ nguyên interface. |
-| **7** | **Nếu Binance WebSocket disconnect thì hệ thống phục hồi như thế nào?** | `BinanceAdapter` cài đặt cơ chế **Auto-Reconnect với Exponential Backoff**. Khi mất mạng, hệ thống tự động thử lại sau 1s, 2s, 4s... và tự động fetch bù các nến bị thiếu qua REST API khi kết nối lại. |
-| **8** | **Làm sao kiểm tra một kết quả trên Leaderboard được tạo ra bởi version strategy nào?** | Bảng `strategy_definitions` và `backtest_results` lưu trữ trường `version`, `params_json` và mã băm hash `id`. Mọi kết quả trên Leaderboard đều có khóa ngoại liên kết chính xác tới phiên bản định nghĩa chiến lược (**Reproducibility**). |
+    users {
+        string id PK
+        string username UK
+        string email UK
+        string hashed_password
+        string role "trader|analyst|admin"
+        datetime created_at
+    }
+
+    strategy_definitions {
+        string id PK
+        string user_id FK
+        string name
+        string type "single|composite|ai_generated"
+        text description
+        text source_prompt
+        json params_json
+        string version "1.0.0"
+        datetime created_at
+    }
+
+    backtest_results {
+        string id PK
+        string user_id FK
+        string strategy_definition_id FK
+        string symbol
+        string timeframe
+        json metrics_json
+        float overall_score
+        datetime created_at
+    }
+
+    trade_records {
+        string id PK
+        string backtest_result_id FK
+        string symbol
+        datetime entry_time
+        float entry_price
+        datetime exit_time
+        float exit_price
+        float volume_usd
+        float stop_loss
+        float take_profit
+        float fee
+        float slippage
+        float profit_usd
+        float profit_pct
+        string trade_type "LONG|SHORT"
+    }
+
+    leaderboard_entries {
+        string id PK
+        string backtest_result_id FK "UNIQUE"
+        integer rank
+        float score
+        datetime updated_at
+    }
+
+    crawler_tag_schemas {
+        string id PK
+        string domain
+        string title_selector
+        string content_selector
+        string date_selector
+        datetime created_at
+        datetime updated_at
+    }
+
+    news_items {
+        string id PK
+        string title
+        string content
+        string source
+        string url
+        datetime published_at
+        float sentiment_score
+        string sentiment_label
+    }
+```
 
 ---
 
-## 6. Các Anti-Pattern Đã Được Loại Bỏ Hoàn Toàn
+## 6. Cây Thư Mục Mã Nguồn (Source Code Layout)
 
-1. **God Service**: Không dồn toàn bộ code vào một file. Hệ thống chia tách thành các Service chuyên trách: `MarketService`, `StrategyRegistry`, `BacktestEvaluator`, `LeaderboardService`, `SmartCrawler`, `SentimentService`.
-2. **Hard-coded Strategy**: Không dùng các khối lệnh `if strategy == 'MA' elif ...`. Toàn bộ chiến lược được quản lý động qua `StrategyRegistry` và `CompositeStrategy`.
-3. **Frontend chứa Business Logic**: Toàn bộ logic phân tích kỹ thuật, tính toán tín hiệu, giả lập lệnh, trừ phí, slippage 5bps và chấm điểm được thực thi 100% ở Backend. Frontend chỉ đảm nhận hiển thị UI/UX.
-4. **Strategy truy cập trực tiếp Database**: Các chiến lược giao dịch là pure logic functions nhận DataFrame nến và trả về tín hiệu, hoàn toàn không dính líu đến SQL/Database.
-5. **Crawler phụ thuộc chặt vào ML**: Bộ thu thập dữ liệu (Crawler) chỉ chịu trách nhiệm lấy HTML và lưu schema tag; việc chấm điểm cảm xúc do `SentimentService` phụ trách riêng biệt.
+```
+KTPM-crypto-project/
+ backend/
+    src/
+        main.py                          ← FastAPI app, lifespan, routers
+        domain/
+           interfaces.py                ← IStrategy (ABC)
+           news_interfaces.py           ← INewsProvider, NewsItem
+        core/
+           security.py                  ← JWT + PBKDF2 + RBAC
+        strategies/
+           base.py                      ← BaseStrategy
+           registry.py                  ← StrategyRegistry (Singleton, Auto-Discovery)
+           composite.py                 ← CompositeStrategy (AND/OR/WEIGHTED)
+           implementations/             ← Drop-in plugin strategies
+               ma_strategy.py
+               rsi_strategy.py
+               bollinger_strategy.py
+               support_resistance_strategy.py
+               smc_strategy.py
+               news_sentiment_strategy.py
+        services/
+           backtest/
+              evaluator.py             ← BacktestEvaluator (vectorized metrics)
+              trade_simulator.py       ← TradeSimulator (LONG/SHORT + SL/TP)
+           search/
+              strategy_generator.py    ← StrategyCandidate + PARAM_RANGES
+              random_search.py         ← RandomSearch (Monte Carlo)
+              genetic_search.py        ← GeneticSearch (GA)
+              tasks.py                 ← Celery task wrapper
+           leaderboard/
+              leaderboard_service.py   ← 3-tier: Redis + DB + InProc
+           ai/
+              strategy_parser.py       ← AIStrategyParser (NL → JSON)
+           crawler/
+              smart_crawler.py         ← SmartCrawler (HTML tag learner)
+           news/
+              news_collector.py        ← NewsCollector
+           ML/
+               sentiment_service.py     ← FinBERT SentimentService
+        infrastructure/
+           adapters/
+              base_exchange.py         ← IExchangeAdapter (ABC)
+              binance_adapter.py       ← BinanceAdapter (Async CCXT)
+              binance_ws_adapter.py    ← Realtime WebSocket adapter
+           database/
+              config.py                ← SQLAlchemy engine & session
+              models.py                ← ORM models (7 tables)
+              repositories.py          ← Repository pattern (CRUD)
+           message_broker/
+               events.py                ← EventType enum (6 events)
+               event_bus.py             ← EventBus (Redis Streams + fallback)
+        api/
+            v1/
+               auth_router.py           ← Register / Login / JWT
+               search_router.py         ← Search start/stop/status
+               leaderboard_router.py    ← GET top-k
+               news_router.py           ← GET news feed
+               sentiment_router.py      ← POST analyze sentiment
+               custom_strategy_router.py ← AI Studio parse/save
+            websockets/
+                market_ws.py             ← /ws/market (Binance stream)
+                events_ws.py             ← /ws/events (system events)
+ frontend/
+    src/
+        App.tsx                           ← Router + Layout
+        pages/
+           Dashboard.tsx                ← Market Dashboard (4 charts)
+           BacktestPage.tsx             ← Backtest Workbench
+           SearchPage.tsx               ← AI Search Engine
+           LeaderboardPage.tsx          ← Leaderboard
+           StrategyStudioPage.tsx       ← AI Strategy Studio
+           NewsPage.tsx                 ← News Feed & Sentiment
+        components/
+            Charts/TradingChart.tsx       ← TradingView Lightweight Charts
+            TradeDetailTable.tsx          ← 12-column trade table
+            SentimentSummary.tsx          ← Sentiment gauge
+            Auth/                         ← Login/Register/UserDropdown
+            Layout/                       ← Sidebar, Navbar
+ docs/
+     architecture.md                      ← (Tài liệu này)
+     architecture-qa.md                   ← Trả lời 10 câu hỏi kiến trúc
+     demo-scenario.md                     ← Kịch bản demo 10 bước
+     adr/
+         ADR-001.md                       ← FastAPI selection
+         ADR-002.md                       ← Plugin Architecture
+         ADR-003.md                       ← Composite Strategy Pattern
+         ADR-004.md                       ← Event-Driven Architecture
+         ADR-005.md                       ← Database Selection
+         ADR-006.md                       ← Backtest Workbench & AI Studio
+```
 
 ---
 
-## 7. Các Thuộc Tính Chất Lượng Đạt Được (Quality Attributes)
+## 7. Các Anti-Pattern Đã Được Loại Bỏ
 
-- **Modifiability (Tính dễ sửa đổi & mở rộng)**: Đạt điểm tối đa nhờ Plugin Pattern và Registry.
-- **Scalability (Tính mở rộng quy mô)**: Sẵn sàng cho Multi-workers, Redis Pub/Sub, Celery Queue.
-- **Reliability & Fault Tolerance (Độ tin cậy)**: Cách ly lỗi giữa các module, tự phục hồi kết nối.
-- **Observability (Khả năng quan sát)**: Theo dõi tiến độ search, số candidates đã thử, trạng thái worker, lịch sử 12 cột chi tiết và visual markers trên biểu đồ.
+| Anti-Pattern | Giải pháp trong hệ thống |
+|:---|:---|
+| **God Service** | Tách thành 10+ Service chuyên trách: StrategyRegistry, BacktestEvaluator, LeaderboardService, SmartCrawler, SentimentService, AIParser, SearchEngine, NewsCollector… |
+| **Hard-coded Strategy** | Không dùng `if strategy == 'MA' elif …`. Plugin Architecture tự động scan `implementations/` |
+| **Frontend chứa Business Logic** | 100% logic tính toán ở Backend. Frontend chỉ render UI/UX |
+| **Strategy truy cập DB** | Strategy là pure function: nhận DataFrame → trả Signal Series. Zero DB dependency |
+| **Crawler phụ thuộc ML** | SmartCrawler chỉ crawl HTML + lưu schema. SentimentService chấm điểm riêng biệt |
+| **Circular Dependency** | EventBus Pub/Sub cắt đứt dependency giữa Search/Backtest ↔ Leaderboard |
+
+---
+
+## 8. Các Thuộc Tính Chất Lượng Đạt Được (Quality Attributes)
+
+| Quality Attribute | Cơ chế đạt được |
+|:---|:---|
+| **Modifiability** | Plugin Pattern + Strategy Registry + IStrategy interface |
+| **Scalability** | Celery Worker Pool + Redis Job Queue + EventBus Redis Streams |
+| **Reliability & Fault Tolerance** | Module isolation, auto-reconnect Binance WS, try/catch cách ly lỗi |
+| **Observability** | Real-time search progress, candidate count, fitness curve, 12-column trade detail |
+| **Testability** | Pure function strategies, Repository Pattern, EventBus fallback for unit tests |
+| **Extensibility** | IExchangeAdapter, INewsProvider, IStrategy — mở rộng không sửa core |

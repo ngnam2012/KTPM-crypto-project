@@ -6,8 +6,7 @@ import {
   Sparkles, 
   FlaskConical, 
   BookmarkCheck, 
-  LogIn, 
-  UserPlus 
+  LogIn 
 } from 'lucide-react';
 import { useAuth } from '../../shared/context/AuthContext';
 import { Link } from 'react-router-dom';
@@ -30,20 +29,13 @@ export const UserDropdown: React.FC = () => {
 
   if (!isAuthenticated || !user) {
     return (
-      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0">
         <button
           onClick={() => openAuthModal('login')}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-bg-surface hover:bg-bg-hover text-text-main border border-border-subtle hover:border-brand-400/40 text-xs font-semibold transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-bg-deep text-xs font-bold transition-all shadow-md shadow-brand-500/20 hover:scale-[1.02] whitespace-nowrap"
         >
-          <LogIn className="w-3.5 h-3.5 text-brand-400" />
+          <LogIn className="w-3.5 h-3.5" />
           <span>Sign In</span>
-        </button>
-        <button
-          onClick={() => openAuthModal('register')}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-bg-deep font-bold text-xs shadow-md shadow-brand-500/20 hover:scale-105 transition-all"
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          <span>Register</span>
         </button>
       </div>
     );
